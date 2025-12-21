@@ -43,6 +43,7 @@ export interface MonthRecord {
   groceryDues: number;
   houseFundDues: number;
   housemateSnapshots: Record<string, MonthHousemateSnapshot>;
+  finalized: boolean;
   createdAt: Timestamp;
 }
 

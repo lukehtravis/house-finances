@@ -72,15 +72,23 @@ export function Receipts() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
 
-  // Check if the selected date's month is finalized
-  const selectedMonthKey = useMemo(
-    () => getMonthKeyFromDate(form.date),
+  // Check if the target month (where this receipt will be credited) is finalized
+  // Receipts are assigned to the NEXT month, so a December receipt goes to January
+  const targetMonthKey = useMemo(
+    () => (form.date ? getMonthKeyFromDate(form.date) : null),
     [form.date]
   );
-  const { data: selectedMonthRecord } = useDocument<MonthRecord>(
+  const { data: targetMonthRecord } = useDocument<MonthRecord>(
     "months",
-    selectedMonthKey
+    targetMonthKey || ""
   );
+
+  // Get the receipt date month for display purposes
+  const receiptDateMonth = useMemo(() => {
+    if (!form.date) return null;
+    const [year, month] = form.date.split("-").map(Number);
+    return format(new Date(year, month - 1, 1), "MMMM yyyy");
+  }, [form.date]);
 
   // Get unique month keys from receipts for filter dropdown
   const availableMonths = useMemo(() => {
@@ -123,15 +131,17 @@ export function Receipts() {
       return;
     }
 
-    // Check if month is already finalized/calculated
-    if (selectedMonthRecord) {
+    // Check if target month (where receipt will be credited) is already finalized
+    if (targetMonthRecord?.finalized && targetMonthKey) {
+      const [year, month] = targetMonthKey.split("-").map(Number);
+      const targetMonthDisplay = format(new Date(year, month - 1, 1), "MMMM yyyy");
       setFormError(
-        `Cannot add receipts for ${format(new Date(selectedMonthKey + "-01"), "MMMM yyyy")}. This month has already been calculated and finalized.`
+        `You're adding a receipt for ${receiptDateMonth}, which will be credited to ${targetMonthDisplay}. ${targetMonthDisplay} has already been finalized, so you cannot add this receipt.`
       );
       return;
     }
 
-    const monthKey = selectedMonthKey;
+    const monthKey = targetMonthKey!;
 
     setSubmitting(true);
     try {
@@ -195,9 +205,17 @@ export function Receipts() {
             </div>
           )}
 
-          {selectedMonthRecord && (
+          {targetMonthRecord?.finalized && receiptDateMonth && targetMonthKey && (
             <div className="mb-3 rounded-md bg-amber-900/30 border border-amber-800 px-3 py-2 text-sm text-amber-200">
-              ⚠️ This month ({format(new Date(selectedMonthKey + "-01"), "MMMM yyyy")}) has already been calculated and finalized. You cannot add receipts for this month.
+              ⚠️ You're adding a receipt for {receiptDateMonth}, which will be credited to{" "}
+              {(() => {
+                const [year, month] = targetMonthKey.split("-").map(Number);
+                return format(new Date(year, month - 1, 1), "MMMM yyyy");
+              })()}
+              . {(() => {
+                const [year, month] = targetMonthKey.split("-").map(Number);
+                return format(new Date(year, month - 1, 1), "MMMM yyyy");
+              })()} has already been finalized, so you cannot add this receipt.
             </div>
           )}
 
@@ -308,7 +326,7 @@ export function Receipts() {
 
             <button
               type="submit"
-              disabled={submitting || !!selectedMonthRecord}
+              disabled={submitting || !!targetMonthRecord?.finalized}
               className="rounded-md bg-sky-500 px-6 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {submitting ? "Adding..." : "Add Receipt"}

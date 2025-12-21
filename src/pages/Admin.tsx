@@ -16,6 +16,7 @@ import type {
   PaidStatus,
 } from "../lib/types";
 import { format } from "date-fns";
+import { useMonthCalculations } from "../hooks/useMonthCalculations";
 
 type HousemateFormState = {
   name: string;
@@ -414,6 +415,7 @@ export function Admin() {
           settingsDoc?.houseFundDuesDefault ??
           defaultSettings.houseFundDuesDefault,
         housemateSnapshots,
+        finalized: false,
       } as Omit<MonthRecord, "id">);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to create month.");
@@ -1040,6 +1042,7 @@ export function Admin() {
                       <tr>
                         <th className="px-3 py-2">Month</th>
                         <th className="px-3 py-2">Utilities</th>
+                        <th className="px-3 py-2">Finalized</th>
                         <th className="px-3 py-2">Paid</th>
                         <th className="px-3 py-2">Partial</th>
                         <th className="px-3 py-2">Unpaid</th>
@@ -1070,6 +1073,17 @@ export function Admin() {
                               ) : (
                                 <span className="text-xs text-slate-400">
                                   Not entered
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              {m.finalized ? (
+                                <span className="text-xs font-semibold text-emerald-300">
+                                  ✓ Finalized
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-400">
+                                  Not finalized
                                 </span>
                               )}
                             </td>
@@ -1141,6 +1155,7 @@ function MonthEditForm({
   const [utilities, setUtilities] = useState<Record<string, string>>({});
   const [groceryDues, setGroceryDues] = useState("");
   const [houseFundDues, setHouseFundDues] = useState("");
+  const [finalized, setFinalized] = useState(false);
   const [snapshots, setSnapshots] = useState<
     Record<
       string,
@@ -1149,6 +1164,10 @@ function MonthEditForm({
   >({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Get calculation results for validation
+  const { summary: calculationSummary, loading: calculationLoading } =
+    useMonthCalculations(month.monthKey);
 
   // Initialize form from month data
   useEffect(() => {
@@ -1160,6 +1179,7 @@ function MonthEditForm({
 
     setGroceryDues(String(month.groceryDues));
     setHouseFundDues(String(month.houseFundDues));
+    setFinalized(month.finalized ?? false);
 
     const snaps: Record<
       string,
@@ -1237,6 +1257,7 @@ function MonthEditForm({
         groceryDues: groceryDuesNum,
         houseFundDues: houseFundDuesNum,
         housemateSnapshots: updatedSnapshots,
+        finalized,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save month.");
@@ -1258,8 +1279,8 @@ function MonthEditForm({
         <h3 className="text-lg font-semibold text-slate-50">
           Edit{" "}
           {(() => {
-            const [year, month] = month.monthKey.split("-").map(Number);
-            return format(new Date(year, month - 1, 1), "MMMM yyyy");
+            const [year, monthNum] = month.monthKey.split("-").map(Number);
+            return format(new Date(year, monthNum - 1, 1), "MMMM yyyy");
           })()}
         </h3>
         <button
@@ -1338,6 +1359,27 @@ function MonthEditForm({
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 outline-none ring-0 focus:border-sky-400"
             />
           </div>
+        </div>
+
+        {/* Finalized Toggle */}
+        <div>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={finalized}
+              onChange={(e) => setFinalized(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-2 focus:ring-sky-400"
+            />
+            <span className="text-sm font-medium text-slate-200">
+              Finalized (prevents adding receipts for this month)
+            </span>
+          </label>
+          {finalized && (
+            <p className="mt-1 text-xs text-amber-300">
+              ⚠️ Once finalized, receipts cannot be added that would affect this
+              month's calculations.
+            </p>
+          )}
         </div>
 
         {/* Housemate Snapshots */}
@@ -1429,6 +1471,81 @@ function MonthEditForm({
             </table>
           </div>
         </div>
+
+        {/* Calculation Validation */}
+        {calculationSummary && calculationSummary.length > 0 && (
+          <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+            <h4 className="mb-3 text-sm font-semibold text-slate-200">
+              Calculation Results (for validation)
+            </h4>
+            {calculationLoading ? (
+              <p className="text-xs text-slate-400">Calculating...</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-slate-900/80 uppercase tracking-wide text-slate-400">
+                    <tr>
+                      <th className="px-2 py-1">Name</th>
+                      <th className="px-2 py-1 text-right">Room Rent</th>
+                      <th className="px-2 py-1 text-right">Utilities</th>
+                      <th className="px-2 py-1 text-right">Grocery</th>
+                      <th className="px-2 py-1 text-right">House Fund</th>
+                      <th className="px-2 py-1 text-right">Shared</th>
+                      <th className="px-2 py-1 text-right">Receipts</th>
+                      <th className="px-2 py-1 text-right">Adjust</th>
+                      <th className="px-2 py-1 text-right font-semibold">
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {calculationSummary.map((item) => (
+                      <tr
+                        key={item.housemate.id}
+                        className="border-t border-slate-800"
+                      >
+                        <td className="px-2 py-1 text-slate-300">
+                          {item.housemate.name}
+                        </td>
+                        <td className="px-2 py-1 text-right text-slate-300">
+                          {formatCurrency(item.dues.roomRent)}
+                        </td>
+                        <td className="px-2 py-1 text-right text-slate-300">
+                          {formatCurrency(item.dues.utilities)}
+                        </td>
+                        <td className="px-2 py-1 text-right text-slate-300">
+                          {formatCurrency(item.dues.groceryDues)}
+                        </td>
+                        <td className="px-2 py-1 text-right text-slate-300">
+                          {formatCurrency(item.dues.houseFundDues)}
+                        </td>
+                        <td className="px-2 py-1 text-right text-slate-300">
+                          {formatCurrency(
+                            Object.values(item.dues.sharedCosts).reduce(
+                              (sum, val) => sum + val,
+                              0
+                            )
+                          )}
+                        </td>
+                        <td className="px-2 py-1 text-right text-red-300">
+                          -{formatCurrency(item.dues.receiptsTotal)}
+                        </td>
+                        <td className="px-2 py-1 text-right text-slate-300">
+                          {item.dues.feeAdjustment !== 0
+                            ? formatCurrency(item.dues.feeAdjustment)
+                            : "—"}
+                        </td>
+                        <td className="px-2 py-1 text-right font-semibold text-slate-100">
+                          {formatCurrency(item.dues.grandTotal)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex gap-2">
           <button
