@@ -11,16 +11,10 @@ export interface Housemate {
 
 export type ReceiptFund = "grocery" | "house";
 
-export interface ReceiptCategory {
-  name: string;
-  fund: ReceiptFund;
-}
-
 export interface Settings {
   groceryDuesDefault: number;
   houseFundDuesDefault: number;
   utilityLineItems: string[];
-  receiptCategories: ReceiptCategory[];
   housePassword: string;
 }
 
@@ -57,7 +51,7 @@ export interface Receipt {
   date: Timestamp;
   housemateId: string;
   place: string;
-  category: string;
+  fund: ReceiptFund;
   price: number;
   description: string;
   monthKey: string;
