@@ -5,6 +5,5 @@ dist
 .env.local
 .env.*.local
 *.log
-CURSOR_PROMPTS.md
 
 
