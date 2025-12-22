@@ -3,6 +3,12 @@ import { format } from "date-fns";
 import { PageShell } from "../components/ui/PageShell";
 import { useCollection, useDocument, addDocument } from "../hooks/useFirestore";
 import type { Receipt, Housemate, ReceiptFund, MonthRecord } from "../lib/types";
+import {
+  formatDateShort,
+  formatMonthKey,
+  formatCurrency,
+  getFirestoreErrorMessage,
+} from "../lib/utils";
 
 type ReceiptFormState = {
   date: string;
@@ -71,6 +77,8 @@ export function Receipts() {
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
+  const [currentPage, setCurrentPage] = useState(1);
+  const receiptsPerPage = 20;
 
   // Check if the target month (where this receipt will be credited) is finalized
   // Receipts are assigned to the NEXT month, so a December receipt goes to January
@@ -87,7 +95,7 @@ export function Receipts() {
   const receiptDateMonth = useMemo(() => {
     if (!form.date) return null;
     const [year, month] = form.date.split("-").map(Number);
-    return format(new Date(year, month - 1, 1), "MMMM yyyy");
+    return formatMonthKey(`${year}-${String(month).padStart(2, "0")}`);
   }, [form.date]);
 
   // Get unique month keys from receipts for filter dropdown
@@ -112,6 +120,36 @@ export function Receipts() {
     return filteredReceipts.reduce((sum, r) => sum + r.price, 0);
   }, [filteredReceipts]);
 
+  // Pagination
+  const totalPages = Math.ceil(filteredReceipts.length / receiptsPerPage);
+  const paginatedReceipts = useMemo(() => {
+    const startIndex = (currentPage - 1) * receiptsPerPage;
+    return filteredReceipts.slice(startIndex, startIndex + receiptsPerPage);
+  }, [filteredReceipts, currentPage]);
+
+  // Reset to page 1 when filters change
+  useMemo(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  function getHousemateName(housemateId: string): string {
+    return housemates.find((h) => h.id === housemateId)?.name ?? "Unknown";
+  }
+
+  function formatReceiptDate(date: any): string {
+    if (!date) return "—";
+    // Handle Firestore Timestamp
+    if (date.toDate) {
+      return formatDateShort(date.toDate());
+    }
+    // Handle Date object
+    if (date instanceof Date) {
+      return formatDateShort(date);
+    }
+    // Handle string
+    return formatDateShort(date);
+  }
+
   async function handleSubmit(e?: FormEvent) {
     e?.preventDefault();
     setFormError(null);
@@ -133,8 +171,7 @@ export function Receipts() {
 
     // Check if target month (where receipt will be credited) is already finalized
     if (targetMonthRecord?.finalized && targetMonthKey) {
-      const [year, month] = targetMonthKey.split("-").map(Number);
-      const targetMonthDisplay = format(new Date(year, month - 1, 1), "MMMM yyyy");
+      const targetMonthDisplay = formatMonthKey(targetMonthKey);
       setFormError(
         `You're adding a receipt for ${receiptDateMonth}, which will be credited to ${targetMonthDisplay}. ${targetMonthDisplay} has already been finalized, so you cannot add this receipt.`
       );
@@ -208,14 +245,7 @@ export function Receipts() {
           {targetMonthRecord?.finalized && receiptDateMonth && targetMonthKey && (
             <div className="mb-3 rounded-md bg-amber-900/30 border border-amber-800 px-3 py-2 text-sm text-amber-200">
               ⚠️ You're adding a receipt for {receiptDateMonth}, which will be credited to{" "}
-              {(() => {
-                const [year, month] = targetMonthKey.split("-").map(Number);
-                return format(new Date(year, month - 1, 1), "MMMM yyyy");
-              })()}
-              . {(() => {
-                const [year, month] = targetMonthKey.split("-").map(Number);
-                return format(new Date(year, month - 1, 1), "MMMM yyyy");
-              })()} has already been finalized, so you cannot add this receipt.
+              {formatMonthKey(targetMonthKey)}. {formatMonthKey(targetMonthKey)} has already been finalized, so you cannot add this receipt.
             </div>
           )}
 
@@ -391,7 +421,7 @@ export function Receipts() {
                 <option value="">All months</option>
                 {availableMonths.map((month) => (
                   <option key={month} value={month}>
-                    {format(new Date(month + "-01"), "MMMM yyyy")}
+                    {formatMonthKey(month)}
                   </option>
                 ))}
               </select>
@@ -402,7 +432,7 @@ export function Receipts() {
             <p className="text-sm text-slate-400">Loading receipts…</p>
           ) : receiptsError ? (
             <p className="text-sm text-red-400">
-              Error loading receipts: {receiptsError.message}
+              {getFirestoreErrorMessage(receiptsError)}
             </p>
           ) : filteredReceipts.length === 0 ? (
             <p className="text-sm text-slate-400">
@@ -412,7 +442,8 @@ export function Receipts() {
             </p>
           ) : (
             <>
-              <div className="overflow-x-auto rounded-md border border-slate-800">
+              {/* Desktop Table View */}
+              <div className="hidden sm:block overflow-x-auto rounded-md border border-slate-800">
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-slate-900/80 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
@@ -425,8 +456,8 @@ export function Receipts() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredReceipts.map((r) => (
-                      <tr key={r.id} className="border-t border-slate-800">
+                    {paginatedReceipts.map((r) => (
+                      <tr key={r.id} className="border-t border-slate-800 hover:bg-slate-900/50">
                         <td className="px-3 py-2 text-slate-300">
                           {formatReceiptDate(r.date)}
                         </td>
@@ -457,7 +488,7 @@ export function Receipts() {
                   <tfoot className="bg-slate-900/50 border-t-2 border-slate-700">
                     <tr>
                       <td colSpan={4} className="px-3 py-2 text-right font-semibold text-slate-200">
-                        Total:
+                        Total ({filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? "s" : ""}):
                       </td>
                       <td className="px-3 py-2 text-right font-bold text-slate-50">
                         {formatCurrency(filteredTotal)}
@@ -467,6 +498,95 @@ export function Receipts() {
                   </tfoot>
                 </table>
               </div>
+
+              {/* Mobile Card View */}
+              <div className="block sm:hidden space-y-3">
+                {paginatedReceipts.map((r) => (
+                  <div
+                    key={r.id}
+                    className="rounded-md border border-slate-800 bg-slate-900/50 p-4"
+                  >
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="font-medium text-slate-200">
+                        {getHousemateName(r.housemateId)}
+                      </span>
+                      <span className="font-semibold text-slate-100">
+                        {formatCurrency(r.price)}
+                      </span>
+                    </div>
+                    <div className="space-y-1 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">Date:</span>
+                        <span className="text-slate-300">{formatReceiptDate(r.date)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">Place:</span>
+                        <span className="text-slate-300">{r.place}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">Fund:</span>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                            r.fund === "grocery"
+                              ? "bg-emerald-900/60 text-emerald-200"
+                              : "bg-blue-900/60 text-blue-200"
+                          }`}
+                        >
+                          {r.fund === "grocery" ? "Grocery" : "House"}
+                        </span>
+                      </div>
+                      {r.description && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-slate-400">Notes:</span>
+                          <span className="text-slate-300">{r.description}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-slate-200">
+                      Total ({filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? "s" : ""}):
+                    </span>
+                    <span className="font-bold text-slate-50">
+                      {formatCurrency(filteredTotal)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="text-sm text-slate-400">
+                    Showing {((currentPage - 1) * receiptsPerPage) + 1} to{" "}
+                    {Math.min(currentPage * receiptsPerPage, filteredReceipts.length)} of{" "}
+                    {filteredReceipts.length} receipts
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <span className="flex items-center px-3 py-1.5 text-sm text-slate-300">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </section>

@@ -17,6 +17,12 @@ import type {
 } from "../lib/types";
 import { format } from "date-fns";
 import { useMonthCalculations } from "../hooks/useMonthCalculations";
+import {
+  formatMonthKey,
+  formatCurrency,
+  formatDate,
+  getFirestoreErrorMessage,
+} from "../lib/utils";
 
 type HousemateFormState = {
   name: string;
@@ -502,7 +508,7 @@ export function Admin() {
               )}
               {housematesError && (
                 <p className="text-sm text-red-400">
-                  Error loading housemates: {housematesError.message}
+                  {getFirestoreErrorMessage(housematesError)}
                 </p>
               )}
 
@@ -717,7 +723,7 @@ export function Admin() {
             )}
             {settingsError && (
               <p className="text-sm text-red-400">
-                Error loading settings: {settingsError.message}
+                {getFirestoreErrorMessage(settingsError)}
               </p>
             )}
 
@@ -850,7 +856,7 @@ export function Admin() {
               )}
               {sharedCostsError && (
                 <p className="text-sm text-red-400">
-                  Error loading shared costs: {sharedCostsError.message}
+                  {getFirestoreErrorMessage(sharedCostsError)}
                 </p>
               )}
 
@@ -1024,7 +1030,7 @@ export function Admin() {
               )}
               {monthsError && (
                 <p className="text-sm text-red-400">
-                  Error loading months: {monthsError.message}
+                  {getFirestoreErrorMessage(monthsError)}
                 </p>
               )}
 
@@ -1266,13 +1272,6 @@ function MonthEditForm({
     }
   }
 
-  function formatCurrency(amount: number): string {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amount);
-  }
-
   return (
     <section className="border-t border-slate-800 pt-6">
       <div className="mb-4 flex items-center justify-between">
@@ -1280,7 +1279,7 @@ function MonthEditForm({
           Edit{" "}
           {(() => {
             const [year, monthNum] = month.monthKey.split("-").map(Number);
-            return format(new Date(year, monthNum - 1, 1), "MMMM yyyy");
+            return formatMonthKey(month.monthKey);
           })()}
         </h3>
         <button
