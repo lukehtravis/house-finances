@@ -43,7 +43,6 @@ export interface MonthRecord {
   groceryDues: number;
   houseFundDues: number;
   housemateSnapshots: Record<string, MonthHousemateSnapshot>;
-  finalized: boolean;
   createdAt: Timestamp;
 }
 
@@ -60,8 +59,11 @@ export interface Receipt {
 }
 
 export interface FundBalances {
-  grocery: number;
-  house: number;
+  id: "balances"; // Singleton document ID
+  initialGroceryBalance: number; // Starting balance from previous system
+  initialHouseBalance: number; // Starting balance from previous system
+  grocery: number; // Current balance (deprecated, calculated on-demand)
+  house: number; // Current balance (deprecated, calculated on-demand)
   lastUpdated: Timestamp;
 }
 

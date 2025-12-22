@@ -1,17 +1,19 @@
 import { FormEvent, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { PageShell } from "../components/ui/PageShell";
-import { useCollection, useDocument, addDocument } from "../hooks/useFirestore";
-import type { Receipt, Housemate, ReceiptFund, MonthRecord } from "../lib/types";
+import { useCollection, addDocument } from "../hooks/useFirestore";
+import type { Receipt, Housemate, ReceiptFund } from "../lib/types";
 import {
   formatDateShort,
   formatMonthKey,
   formatCurrency,
   getFirestoreErrorMessage,
+  getCurrentPSTDate,
+  getCurrentPSTDateString,
+  isMonthFinalized,
 } from "../lib/utils";
 
 type ReceiptFormState = {
-  date: string;
   housemateId: string;
   place: string;
   fund: ReceiptFund;
@@ -20,13 +22,13 @@ type ReceiptFormState = {
 };
 
 const emptyForm: ReceiptFormState = {
-  date: format(new Date(), "yyyy-MM-dd"),
   housemateId: "",
   place: "",
   fund: "grocery",
   price: "",
   description: "",
 };
+
 
 type FilterState = {
   personId: string;
@@ -79,24 +81,6 @@ export function Receipts() {
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
   const [currentPage, setCurrentPage] = useState(1);
   const receiptsPerPage = 20;
-
-  // Check if the target month (where this receipt will be credited) is finalized
-  // Receipts are assigned to the NEXT month, so a December receipt goes to January
-  const targetMonthKey = useMemo(
-    () => (form.date ? getMonthKeyFromDate(form.date) : null),
-    [form.date]
-  );
-  const { data: targetMonthRecord } = useDocument<MonthRecord>(
-    "months",
-    targetMonthKey || ""
-  );
-
-  // Get the receipt date month for display purposes
-  const receiptDateMonth = useMemo(() => {
-    if (!form.date) return null;
-    const [year, month] = form.date.split("-").map(Number);
-    return formatMonthKey(`${year}-${String(month).padStart(2, "0")}`);
-  }, [form.date]);
 
   // Get unique month keys from receipts for filter dropdown
   const availableMonths = useMemo(() => {
@@ -169,21 +153,29 @@ export function Receipts() {
       return;
     }
 
-    // Check if target month (where receipt will be credited) is already finalized
-    if (targetMonthRecord?.finalized && targetMonthKey) {
-      const targetMonthDisplay = formatMonthKey(targetMonthKey);
-      setFormError(
-        `You're adding a receipt for ${receiptDateMonth}, which will be credited to ${targetMonthDisplay}. ${targetMonthDisplay} has already been finalized, so you cannot add this receipt.`
-      );
-      return;
-    }
-
-    const monthKey = targetMonthKey!;
-
+    // Get current PST date and calculate target month
+    const currentPSTDate = getCurrentPSTDate();
+    const currentPSTDateString = getCurrentPSTDateString();
+    const monthKey = getMonthKeyFromDate(currentPSTDateString);
+    
     setSubmitting(true);
     try {
+      // Check if target month (where receipt will be credited) has already passed
+      // A month is finalized if the current PST date is past the end of that month
+      if (isMonthFinalized(monthKey)) {
+        const targetMonthDisplay = formatMonthKey(monthKey);
+        const receiptDateDisplay = formatMonthKey(
+          format(currentPSTDate, "yyyy-MM")
+        );
+        setFormError(
+          `You're adding a receipt for ${receiptDateDisplay}, which will be credited to ${targetMonthDisplay}. ${targetMonthDisplay} has already ended, so you cannot add this receipt.`
+        );
+        setSubmitting(false);
+        return;
+      }
+
       await addDocument<Omit<Receipt, "id">>("receipts", {
-        date: new Date(form.date + "T12:00:00"),
+        date: currentPSTDate,
         housemateId: form.housemateId,
         place: form.place.trim(),
         fund: form.fund,
@@ -192,7 +184,7 @@ export function Receipts() {
         monthKey,
       } as Omit<Receipt, "id">);
 
-      setForm({ ...emptyForm, date: format(new Date(), "yyyy-MM-dd") });
+      setForm(emptyForm);
       setSuccessMessage("Receipt added successfully!");
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
@@ -242,28 +234,8 @@ export function Receipts() {
             </div>
           )}
 
-          {targetMonthRecord?.finalized && receiptDateMonth && targetMonthKey && (
-            <div className="mb-3 rounded-md bg-amber-900/30 border border-amber-800 px-3 py-2 text-sm text-amber-200">
-              ⚠️ You're adding a receipt for {receiptDateMonth}, which will be credited to{" "}
-              {formatMonthKey(targetMonthKey)}. {formatMonthKey(targetMonthKey)} has already been finalized, so you cannot add this receipt.
-            </div>
-          )}
-
           <form noValidate onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Date
-                </label>
-                <input
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
-                  className="w-full rounded-md border-2 border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none ring-0 focus:border-sky-400 focus:bg-slate-900 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-calendar-picker-indicator]:hover:opacity-100 [&::-webkit-calendar-picker-indicator]:invert"
-                  required
-                />
-              </div>
-
               <div>
                 <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
                   Person
@@ -356,7 +328,7 @@ export function Receipts() {
 
             <button
               type="submit"
-              disabled={submitting || !!targetMonthRecord?.finalized}
+              disabled={submitting}
               className="rounded-md bg-sky-500 px-6 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {submitting ? "Adding..." : "Add Receipt"}

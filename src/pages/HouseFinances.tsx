@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { PageShell } from "../components/ui/PageShell";
-import { useCollection } from "../hooks/useFirestore";
-import type { MonthRecord, Receipt } from "../lib/types";
+import { useCollection, useDocument } from "../hooks/useFirestore";
+import type { MonthRecord, Receipt, FundBalances } from "../lib/types";
 import { formatMonthKey, formatCurrency, getFirestoreErrorMessage } from "../lib/utils";
 
 interface FundMonthData {
@@ -37,6 +37,12 @@ export function HouseFinances() {
     loading: receiptsLoading,
     error: receiptsError,
   } = useCollection<Receipt>("receipts");
+
+  const {
+    data: fundBalancesDoc,
+    loading: fundBalancesLoading,
+    error: fundBalancesError,
+  } = useDocument<FundBalances>("fundBalances", "balances");
 
   // Calculate fund data for each month
   const fundData = useMemo<FundMonthData[]>(() => {
@@ -78,10 +84,13 @@ export function HouseFinances() {
     });
   }, [months, receipts]);
 
-  // Calculate running balances
+  // Calculate running balances starting from initial balances
   const fundDataWithBalances = useMemo(() => {
-    let groceryBalance = 0;
-    let houseBalance = 0;
+    const initialGrocery = fundBalancesDoc?.initialGroceryBalance ?? 0;
+    const initialHouse = fundBalancesDoc?.initialHouseBalance ?? 0;
+
+    let groceryBalance = initialGrocery;
+    let houseBalance = initialHouse;
 
     return fundData.map((data) => {
       groceryBalance += data.grocery.netChange;
@@ -93,19 +102,30 @@ export function HouseFinances() {
         houseBalance,
       };
     });
-  }, [fundData]);
+  }, [fundData, fundBalancesDoc]);
 
-  // Get current balances (from last month in data)
+  // Get current balances (from last month in data, or initial if no months)
   const currentBalances = useMemo(() => {
     if (fundDataWithBalances.length === 0) {
-      return { grocery: 0, house: 0 };
+      return {
+        grocery: fundBalancesDoc?.initialGroceryBalance ?? 0,
+        house: fundBalancesDoc?.initialHouseBalance ?? 0,
+      };
     }
     const last = fundDataWithBalances[fundDataWithBalances.length - 1]!;
     return {
       grocery: last.groceryBalance,
       house: last.houseBalance,
     };
-  }, [fundDataWithBalances]);
+  }, [fundDataWithBalances, fundBalancesDoc]);
+
+  // Get initial balances for display
+  const initialBalances = useMemo(() => {
+    return {
+      grocery: fundBalancesDoc?.initialGroceryBalance ?? 0,
+      house: fundBalancesDoc?.initialHouseBalance ?? 0,
+    };
+  }, [fundBalancesDoc]);
 
   // Get available years from months
   const availableYears = useMemo(() => {
@@ -138,7 +158,7 @@ export function HouseFinances() {
     }).format(amount);
   }
 
-  if (monthsLoading || receiptsLoading) {
+  if (monthsLoading || receiptsLoading || fundBalancesLoading) {
     return (
       <PageShell title="House Finances">
         <p className="text-slate-400">Loading...</p>
@@ -146,11 +166,11 @@ export function HouseFinances() {
     );
   }
 
-  if (monthsError || receiptsError) {
+  if (monthsError || receiptsError || fundBalancesError) {
     return (
       <PageShell title="House Finances">
         <p className="text-red-400">
-          {getFirestoreErrorMessage(monthsError || receiptsError)}
+          {getFirestoreErrorMessage(monthsError || receiptsError || fundBalancesError)}
         </p>
       </PageShell>
     );
@@ -174,13 +194,20 @@ export function HouseFinances() {
             >
               {formatCurrency(currentBalances.grocery)}
             </div>
-            {fundDataWithBalances.length > 0 && (
-              <p className="mt-2 text-xs text-slate-400">
-                Last updated: {formatMonthKey(
-                  fundDataWithBalances[fundDataWithBalances.length - 1]!.monthKey
-                )}
-              </p>
-            )}
+            <div className="mt-2 space-y-1 text-xs text-slate-400">
+              {initialBalances.grocery > 0 && (
+                <p>
+                  Starting balance: {formatCurrency(initialBalances.grocery)}
+                </p>
+              )}
+              {fundDataWithBalances.length > 0 && (
+                <p>
+                  Last updated: {formatMonthKey(
+                    fundDataWithBalances[fundDataWithBalances.length - 1]!.monthKey
+                  )}
+                </p>
+              )}
+            </div>
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/50 p-6">
             <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
@@ -195,13 +222,20 @@ export function HouseFinances() {
             >
               {formatCurrency(currentBalances.house)}
             </div>
-            {fundDataWithBalances.length > 0 && (
-              <p className="mt-2 text-xs text-slate-400">
-                Last updated: {formatMonthKey(
-                  fundDataWithBalances[fundDataWithBalances.length - 1]!.monthKey
-                )}
-              </p>
-            )}
+            <div className="mt-2 space-y-1 text-xs text-slate-400">
+              {initialBalances.house > 0 && (
+                <p>
+                  Starting balance: {formatCurrency(initialBalances.house)}
+                </p>
+              )}
+              {fundDataWithBalances.length > 0 && (
+                <p>
+                  Last updated: {formatMonthKey(
+                    fundDataWithBalances[fundDataWithBalances.length - 1]!.monthKey
+                  )}
+                </p>
+              )}
+            </div>
           </div>
         </section>
 

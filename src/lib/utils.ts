@@ -95,3 +95,43 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+/**
+ * Get the current date in Pacific Standard Time (PST/PDT)
+ */
+export function getCurrentPSTDate(): Date {
+  const now = new Date();
+  // Convert to PST/PDT (UTC-8 or UTC-7 depending on DST)
+  const pstDateString = now.toLocaleString("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  
+  // Parse the date string (format: "MM/DD/YYYY")
+  const [month, day, year] = pstDateString.split("/").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/**
+ * Get the current date string in YYYY-MM-DD format in PST
+ */
+export function getCurrentPSTDateString(): string {
+  const pstDate = getCurrentPSTDate();
+  return format(pstDate, "yyyy-MM-dd");
+}
+
+/**
+ * Check if a month (by monthKey) has passed in PST time
+ * A month is considered "finalized" if the current PST date is past the end of that month
+ */
+export function isMonthFinalized(monthKey: string): boolean {
+  const [year, month] = monthKey.split("-").map(Number);
+  // Get the last day of the month
+  const lastDayOfMonth = new Date(year, month, 0); // Day 0 of next month = last day of current month
+  const currentPST = getCurrentPSTDate();
+  
+  // Month is finalized if current date is past the last day of that month
+  return currentPST > lastDayOfMonth;
+}
+

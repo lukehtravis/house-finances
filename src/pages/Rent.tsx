@@ -4,7 +4,7 @@ import { PageShell } from "../components/ui/PageShell";
 import { useCollection } from "../hooks/useFirestore";
 import { useMonthCalculations } from "../hooks/useMonthCalculations";
 import type { MonthRecord } from "../lib/types";
-import { formatMonthKey, formatCurrency, getFirestoreErrorMessage } from "../lib/utils";
+import { formatMonthKey, formatCurrency, getFirestoreErrorMessage, isMonthFinalized } from "../lib/utils";
 
 function getCurrentMonthKey(): string {
   const now = new Date();
@@ -199,7 +199,7 @@ export function Rent() {
                     <span className="font-medium text-slate-200">
                       {formatMonthKey(month.monthKey)}
                     </span>
-                    {month.finalized && (
+                    {isMonthFinalized(month.monthKey) && (
                       <span className="text-xs text-emerald-300">✓ Finalized</span>
                     )}
                   </div>

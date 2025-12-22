@@ -14,6 +14,7 @@ import type {
   SharedCostSplitMethod,
   MonthRecord,
   PaidStatus,
+  FundBalances,
 } from "../lib/types";
 import { format } from "date-fns";
 import { useMonthCalculations } from "../hooks/useMonthCalculations";
@@ -22,6 +23,7 @@ import {
   formatCurrency,
   formatDate,
   getFirestoreErrorMessage,
+  isMonthFinalized,
 } from "../lib/utils";
 
 type HousemateFormState = {
@@ -66,7 +68,7 @@ const defaultSettings: Settings = {
 
 export function Admin() {
   const [activeTab, setActiveTab] = useState<
-    "housemates" | "settings" | "shared-costs" | "months"
+    "housemates" | "settings" | "shared-costs" | "months" | "fund-balances"
   >("housemates");
 
   // Housemates
@@ -141,6 +143,78 @@ export function Admin() {
     loading: settingsLoading,
     error: settingsError,
   } = useDocument<Settings>("config", "settings");
+
+  const {
+    data: fundBalancesDoc,
+    loading: fundBalancesLoading,
+    error: fundBalancesDocError,
+  } = useDocument<FundBalances>("fundBalances", "balances");
+
+  const [fundBalancesForm, setFundBalancesForm] = useState({
+    initialGroceryBalance: "",
+    initialHouseBalance: "",
+  });
+  const [savingFundBalances, setSavingFundBalances] = useState(false);
+  const [fundBalancesFormError, setFundBalancesFormError] = useState<
+    string | null
+  >(null);
+  const [fundBalancesSuccess, setFundBalancesSuccess] = useState<string | null>(
+    null
+  );
+
+  // Initialize fund balances form
+  useEffect(() => {
+    if (fundBalancesDoc) {
+      setFundBalancesForm({
+        initialGroceryBalance: String(
+          fundBalancesDoc.initialGroceryBalance ?? 0
+        ),
+        initialHouseBalance: String(fundBalancesDoc.initialHouseBalance ?? 0),
+      });
+    } else {
+      setFundBalancesForm({
+        initialGroceryBalance: "0",
+        initialHouseBalance: "0",
+      });
+    }
+  }, [fundBalancesDoc]);
+
+  async function handleSaveFundBalances() {
+    setFundBalancesFormError(null);
+    setFundBalancesSuccess(null);
+
+    const groceryNum = Number(fundBalancesForm.initialGroceryBalance);
+    const houseNum = Number(fundBalancesForm.initialHouseBalance);
+
+    if (!Number.isFinite(groceryNum) || groceryNum < 0) {
+      setFundBalancesFormError(
+        "Grocery balance must be a non-negative number."
+      );
+      return;
+    }
+    if (!Number.isFinite(houseNum) || houseNum < 0) {
+      setFundBalancesFormError("House balance must be a non-negative number.");
+      return;
+    }
+
+    setSavingFundBalances(true);
+    try {
+      await setDocument<Omit<FundBalances, "id">>("fundBalances", "balances", {
+        initialGroceryBalance: groceryNum,
+        initialHouseBalance: houseNum,
+        grocery: 0, // Deprecated, kept for backwards compatibility
+        house: 0, // Deprecated, kept for backwards compatibility
+      } as Omit<FundBalances, "id">);
+      setFundBalancesSuccess("Initial balances saved successfully!");
+      setTimeout(() => setFundBalancesSuccess(null), 3000);
+    } catch (err) {
+      setFundBalancesFormError(
+        err instanceof Error ? err.message : "Failed to save balances."
+      );
+    } finally {
+      setSavingFundBalances(false);
+    }
+  }
 
   const [settingsForm, setSettingsForm] = useState<SettingsFormState>({
     groceryDuesDefault: "",
@@ -421,7 +495,6 @@ export function Admin() {
           settingsDoc?.houseFundDuesDefault ??
           defaultSettings.houseFundDuesDefault,
         housemateSnapshots,
-        finalized: false,
       } as Omit<MonthRecord, "id">);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to create month.");
@@ -492,6 +565,17 @@ export function Admin() {
             }`}
           >
             Months
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("fund-balances")}
+            className={`px-4 py-2 text-sm font-medium ${
+              activeTab === "fund-balances"
+                ? "border-b-2 border-sky-400 text-sky-300"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Fund Balances
           </button>
         </div>
 
@@ -1083,13 +1167,13 @@ export function Admin() {
                               )}
                             </td>
                             <td className="px-3 py-2">
-                              {m.finalized ? (
+                              {isMonthFinalized(m.monthKey) ? (
                                 <span className="text-xs font-semibold text-emerald-300">
                                   ✓ Finalized
                                 </span>
                               ) : (
                                 <span className="text-xs text-slate-400">
-                                  Not finalized
+                                  Open
                                 </span>
                               )}
                             </td>
@@ -1139,6 +1223,109 @@ export function Admin() {
             )}
           </>
         )}
+
+        {/* Fund Balances Tab */}
+        {activeTab === "fund-balances" && (
+          <>
+            <section>
+              <h2 className="mb-4 text-lg font-semibold text-slate-50">
+                Initial Fund Balances
+              </h2>
+              <p className="mb-4 text-sm text-slate-400">
+                Set the starting balances for your funds when migrating from a
+                previous system. These balances represent the funds you had
+                before starting to track with this system. All monthly changes
+                will be calculated on top of these initial balances.
+              </p>
+
+              {fundBalancesLoading && (
+                <p className="text-sm text-slate-400">Loading balances…</p>
+              )}
+              {fundBalancesDocError && (
+                <p className="text-sm text-red-400">
+                  {getFirestoreErrorMessage(fundBalancesDocError)}
+                </p>
+              )}
+
+              {!fundBalancesLoading && !fundBalancesDocError && (
+                <div className="space-y-4">
+                  {fundBalancesFormError && (
+                    <div className="rounded-md bg-red-900/30 border border-red-800 px-3 py-2 text-sm text-red-200">
+                      {fundBalancesFormError}
+                    </div>
+                  )}
+
+                  {fundBalancesSuccess && (
+                    <div className="rounded-md bg-emerald-900/30 border border-emerald-800 px-3 py-2 text-sm text-emerald-200">
+                      {fundBalancesSuccess}
+                    </div>
+                  )}
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                        Initial Grocery Fund Balance ($)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={fundBalancesForm.initialGroceryBalance}
+                        onChange={(e) =>
+                          setFundBalancesForm((f) => ({
+                            ...f,
+                            initialGroceryBalance: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 focus:border-sky-400"
+                        placeholder="0.00"
+                      />
+                      <p className="mt-1 text-xs text-slate-500">
+                        Starting balance from previous system
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                        Initial House Fund Balance ($)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={fundBalancesForm.initialHouseBalance}
+                        onChange={(e) =>
+                          setFundBalancesForm((f) => ({
+                            ...f,
+                            initialHouseBalance: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 focus:border-sky-400"
+                        placeholder="0.00"
+                      />
+                      <p className="mt-1 text-xs text-slate-500">
+                        Starting balance from previous system
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveFundBalances()}
+                      disabled={savingFundBalances}
+                      className="rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {savingFundBalances
+                        ? "Saving..."
+                        : "Save Initial Balances"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          </>
+        )}
       </div>
     </PageShell>
   );
@@ -1161,7 +1348,6 @@ function MonthEditForm({
   const [utilities, setUtilities] = useState<Record<string, string>>({});
   const [groceryDues, setGroceryDues] = useState("");
   const [houseFundDues, setHouseFundDues] = useState("");
-  const [finalized, setFinalized] = useState(false);
   const [snapshots, setSnapshots] = useState<
     Record<
       string,
@@ -1185,7 +1371,6 @@ function MonthEditForm({
 
     setGroceryDues(String(month.groceryDues));
     setHouseFundDues(String(month.houseFundDues));
-    setFinalized(month.finalized ?? false);
 
     const snaps: Record<
       string,
@@ -1263,7 +1448,6 @@ function MonthEditForm({
         groceryDues: groceryDuesNum,
         houseFundDues: houseFundDuesNum,
         housemateSnapshots: updatedSnapshots,
-        finalized,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save month.");
@@ -1358,27 +1542,6 @@ function MonthEditForm({
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 outline-none ring-0 focus:border-sky-400"
             />
           </div>
-        </div>
-
-        {/* Finalized Toggle */}
-        <div>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={finalized}
-              onChange={(e) => setFinalized(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-2 focus:ring-sky-400"
-            />
-            <span className="text-sm font-medium text-slate-200">
-              Finalized (prevents adding receipts for this month)
-            </span>
-          </label>
-          {finalized && (
-            <p className="mt-1 text-xs text-amber-300">
-              ⚠️ Once finalized, receipts cannot be added that would affect this
-              month's calculations.
-            </p>
-          )}
         </div>
 
         {/* Housemate Snapshots */}
