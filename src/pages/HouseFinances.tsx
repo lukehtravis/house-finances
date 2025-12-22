@@ -28,7 +28,7 @@ export function HouseFinances() {
     loading: monthsLoading,
     error: monthsError,
   } = useCollection<MonthRecord>("months", {
-    orderBy: "monthKey",
+    orderByField: "monthKey",
     orderDirection: "asc",
   });
 

@@ -27,7 +27,7 @@ export function Rent() {
     loading: monthsLoading,
     error: monthsError,
   } = useCollection<MonthRecord>("months", {
-    orderBy: "monthKey",
+    orderByField: "monthKey",
     orderDirection: "desc",
   });
 

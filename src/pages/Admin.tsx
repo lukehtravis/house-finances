@@ -321,19 +321,19 @@ export function Admin() {
 
     try {
       if (editingHousemate) {
-        await updateDocument<Housemate>("housemates", editingHousemate.id, {
+        await updateDocument("housemates", editingHousemate.id, {
+          name: housemateForm.name.trim(),
+          roomRent: rentNumber,
+          active: housemateForm.active,
+          sharedCostShares: shares,
+        } as Record<string, unknown>);
+      } else {
+        await addDocument<Omit<Housemate, "id" | "createdAt">>("housemates", {
           name: housemateForm.name.trim(),
           roomRent: rentNumber,
           active: housemateForm.active,
           sharedCostShares: shares,
         });
-      } else {
-        await addDocument<Omit<Housemate, "id">>("housemates", {
-          name: housemateForm.name.trim(),
-          roomRent: rentNumber,
-          active: housemateForm.active,
-          sharedCostShares: shares,
-        } as Omit<Housemate, "id">);
       }
       setHousemateForm(emptyHousemateForm);
       setEditingHousemateId(null);
@@ -358,18 +358,18 @@ export function Admin() {
 
     try {
       if (editingSharedCost) {
-        await updateDocument<SharedCost>("sharedCosts", editingSharedCost.id, {
+        await updateDocument("sharedCosts", editingSharedCost.id, {
           name: sharedCostForm.name.trim(),
           totalCost: costNumber,
           splitMethod: sharedCostForm.splitMethod,
-        });
+        } as Record<string, unknown>);
       } else {
-        await addDocument<Omit<SharedCost, "id">>("sharedCosts", {
+        await addDocument<Omit<SharedCost, "id" | "createdAt">>("sharedCosts", {
           name: sharedCostForm.name.trim(),
           totalCost: costNumber,
           splitMethod: sharedCostForm.splitMethod,
           active: true,
-        } as Omit<SharedCost, "id">);
+        });
       }
       setSharedCostForm(emptySharedCostForm);
       setEditingSharedCostId(null);
@@ -392,12 +392,12 @@ export function Admin() {
         throw new Error("House fund dues must be a non-negative number.");
       }
 
-      await setDocument<Settings>("config", "settings", {
+      await setDocument("config", "settings", {
         groceryDuesDefault: groceryDues,
         houseFundDuesDefault: houseFundDues,
         utilityLineItems: settingsForm.utilityLineItems,
         housePassword: settingsForm.housePassword,
-      });
+      } as Record<string, unknown>);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to save settings.");
     } finally {
@@ -426,13 +426,16 @@ export function Admin() {
   }
 
   async function toggleSharedCostActive(sc: SharedCost) {
-    await updateDocument<SharedCost>("sharedCosts", sc.id, {
+    await updateDocument("sharedCosts", sc.id, {
       active: !sc.active,
-    });
+    } as Record<string, unknown>);
   }
 
   async function toggleHousemateActive(h: Housemate) {
-    await updateDocument<Housemate>("housemates", h.id, { active: !h.active });
+    await updateDocument("housemates", h.id, { active: !h.active } as Record<
+      string,
+      unknown
+    >);
   }
 
   // Month management functions
@@ -486,16 +489,21 @@ export function Admin() {
         utilities[item] = 0;
       });
 
-      await setDocument<Omit<MonthRecord, "id">>("months", nextMonthKey, {
-        monthKey: nextMonthKey,
-        utilities,
-        groceryDues:
-          settingsDoc?.groceryDuesDefault ?? defaultSettings.groceryDuesDefault,
-        houseFundDues:
-          settingsDoc?.houseFundDuesDefault ??
-          defaultSettings.houseFundDuesDefault,
-        housemateSnapshots,
-      } as Omit<MonthRecord, "id">);
+      await setDocument<Omit<MonthRecord, "id" | "createdAt">>(
+        "months",
+        nextMonthKey,
+        {
+          monthKey: nextMonthKey,
+          utilities,
+          groceryDues:
+            settingsDoc?.groceryDuesDefault ??
+            defaultSettings.groceryDuesDefault,
+          houseFundDues:
+            settingsDoc?.houseFundDuesDefault ??
+            defaultSettings.houseFundDuesDefault,
+          housemateSnapshots,
+        }
+      );
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to create month.");
     } finally {
@@ -1212,10 +1220,10 @@ export function Admin() {
                 settings={settingsDoc ?? defaultSettings}
                 onClose={() => setEditingMonthId(null)}
                 onSave={async (updates) => {
-                  await updateDocument<MonthRecord>(
+                  await updateDocument(
                     "months",
                     editingMonthId,
-                    updates
+                    updates as Record<string, unknown>
                   );
                   setEditingMonthId(null);
                 }}

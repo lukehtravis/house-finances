@@ -83,7 +83,7 @@ export async function updateDocument<T extends Record<string, unknown>>(
   partial: Partial<T>
 ) {
   const ref = doc(db, collectionPath, id);
-  await updateDoc(ref, partial);
+  await updateDoc(ref, partial as Partial<Record<string, unknown>>);
 }
 
 /**

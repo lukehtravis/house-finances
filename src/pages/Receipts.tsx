@@ -178,15 +178,15 @@ export function Receipts() {
         return;
       }
 
-      await addDocument<Omit<Receipt, "id">>("receipts", {
-        date: currentPSTDate,
+      await addDocument<Omit<Receipt, "id" | "createdAt">>("receipts", {
+        date: currentPSTDate as any, // Firestore will convert Date to Timestamp
         housemateId: form.housemateId,
         place: form.place.trim(),
         fund: form.fund as ReceiptFund, // Already validated above
         price: priceNumber,
         description: form.description.trim(),
         monthKey,
-      } as Omit<Receipt, "id">);
+      });
 
       setForm(emptyForm);
       setSuccessMessage("Receipt added successfully!");
@@ -196,27 +196,6 @@ export function Receipts() {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  function getHousemateName(id: string): string {
-    return housemates.find((h) => h.id === id)?.name ?? "Unknown";
-  }
-
-  function formatCurrency(amount: number): string {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amount);
-  }
-
-  function formatReceiptDate(date: Date | { seconds: number; nanoseconds: number }): string {
-    let dateObj: Date;
-    if (date instanceof Date) {
-      dateObj = date;
-    } else {
-      dateObj = new Date(date.seconds * 1000);
-    }
-    return format(dateObj, "MMM d, yyyy");
   }
 
   return (
