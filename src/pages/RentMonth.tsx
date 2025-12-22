@@ -250,7 +250,7 @@ export function RentMonth() {
                   </th>
                 ))}
                 <th className="px-3 py-2 text-right">Receipts</th>
-                <th className="px-3 py-2 text-right">Adjustment</th>
+                <th className="px-3 py-2 text-right">Chores</th>
                 <th className="px-3 py-2 text-right font-semibold">Total</th>
                 <th className="px-3 py-2 text-center">Status</th>
               </tr>
@@ -407,7 +407,7 @@ export function RentMonth() {
                   )}
                   {item.dues.feeAdjustment !== 0 && (
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Adjustment</span>
+                      <span className="text-slate-400">Chores</span>
                       <span className="text-slate-200">
                         {formatCurrency(item.dues.feeAdjustment)}
                       </span>

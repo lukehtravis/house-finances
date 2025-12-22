@@ -1349,10 +1349,7 @@ function MonthEditForm({
   const [groceryDues, setGroceryDues] = useState("");
   const [houseFundDues, setHouseFundDues] = useState("");
   const [snapshots, setSnapshots] = useState<
-    Record<
-      string,
-      { paid: PaidStatus; feeAdjustment: string; roomRentOverride?: string }
-    >
+    Record<string, { paid: PaidStatus; feeAdjustment: string }>
   >({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1372,17 +1369,12 @@ function MonthEditForm({
     setGroceryDues(String(month.groceryDues));
     setHouseFundDues(String(month.houseFundDues));
 
-    const snaps: Record<
-      string,
-      { paid: PaidStatus; feeAdjustment: string; roomRentOverride?: string }
-    > = {};
+    const snaps: Record<string, { paid: PaidStatus; feeAdjustment: string }> =
+      {};
     Object.entries(month.housemateSnapshots).forEach(([id, snap]) => {
       snaps[id] = {
         paid: snap.paid,
         feeAdjustment: String(snap.feeAdjustment),
-        roomRentOverride: snap.roomRentOverride
-          ? String(snap.roomRentOverride)
-          : undefined,
       };
     });
     setSnapshots(snaps);
@@ -1424,20 +1416,14 @@ function MonthEditForm({
 
     const updatedSnapshots: Record<
       string,
-      { paid: PaidStatus; feeAdjustment: number; roomRentOverride?: number }
+      { paid: PaidStatus; feeAdjustment: number }
     > = {};
     Object.entries(snapshots).forEach(([id, snap]) => {
       const feeAdj = Number(snap.feeAdjustment);
-      const roomRent = snap.roomRentOverride
-        ? Number(snap.roomRentOverride)
-        : undefined;
 
       updatedSnapshots[id] = {
         paid: snap.paid,
         feeAdjustment: Number.isFinite(feeAdj) ? feeAdj : 0,
-        ...(roomRent !== undefined && Number.isFinite(roomRent) && roomRent > 0
-          ? { roomRentOverride: roomRent }
-          : {}),
       };
     });
 
@@ -1555,8 +1541,7 @@ function MonthEditForm({
                 <tr>
                   <th className="px-3 py-2">Name</th>
                   <th className="px-3 py-2">Paid Status</th>
-                  <th className="px-3 py-2">Fee Adjustment ($)</th>
-                  <th className="px-3 py-2">Room Rent Override ($)</th>
+                  <th className="px-3 py-2">Chores ($)</th>
                 </tr>
               </thead>
               <tbody>
@@ -1605,25 +1590,6 @@ function MonthEditForm({
                           }
                           className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none ring-0 focus:border-sky-400"
                           placeholder="0.00"
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={snap.roomRentOverride ?? ""}
-                          onChange={(e) =>
-                            setSnapshots((s) => ({
-                              ...s,
-                              [housemateId]: {
-                                ...s[housemateId]!,
-                                roomRentOverride: e.target.value || undefined,
-                              },
-                            }))
-                          }
-                          className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none ring-0 focus:border-sky-400"
-                          placeholder="Auto"
                         />
                       </td>
                     </tr>

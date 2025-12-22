@@ -33,7 +33,6 @@ export type PaidStatus = "unpaid" | "partial" | "paid";
 export interface MonthHousemateSnapshot {
   paid: PaidStatus;
   feeAdjustment: number;
-  roomRentOverride?: number;
 }
 
 export interface MonthRecord {

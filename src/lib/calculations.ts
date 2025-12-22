@@ -70,10 +70,11 @@ export function calculateHousemateDues(
     monthRecord.housemateSnapshots
   ).length;
 
-  // Room Rent: use override if present, otherwise use profile value
+  // Room Rent: use profile value
+  const roomRent = housemate.roomRent;
+
+  // Get snapshot for this housemate (for fee adjustment)
   const snapshot = monthRecord.housemateSnapshots[housemate.id];
-  const roomRent =
-    snapshot?.roomRentOverride ?? housemate.roomRent;
 
   // Utilities: sum of all utilities divided by snapshot count
   const totalUtilities = Object.values(monthRecord.utilities).reduce(
