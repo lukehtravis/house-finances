@@ -16,7 +16,7 @@ import {
 type ReceiptFormState = {
   housemateId: string;
   place: string;
-  fund: ReceiptFund;
+  fund: ReceiptFund | "";
   price: string;
   description: string;
 };
@@ -24,7 +24,7 @@ type ReceiptFormState = {
 const emptyForm: ReceiptFormState = {
   housemateId: "",
   place: "",
-  fund: "grocery",
+  fund: "",
   price: "",
   description: "",
 };
@@ -147,6 +147,10 @@ export function Receipts() {
       setFormError("Place/store is required.");
       return;
     }
+    if (!form.fund) {
+      setFormError("Please select a fund.");
+      return;
+    }
     const priceNumber = Number(form.price);
     if (!Number.isFinite(priceNumber) || priceNumber <= 0) {
       setFormError("Price must be a positive number.");
@@ -178,7 +182,7 @@ export function Receipts() {
         date: currentPSTDate,
         housemateId: form.housemateId,
         place: form.place.trim(),
-        fund: form.fund,
+        fund: form.fund as ReceiptFund, // Already validated above
         price: priceNumber,
         description: form.description.trim(),
         monthKey,
@@ -282,11 +286,13 @@ export function Receipts() {
                   onChange={(e) =>
                     setForm((f) => ({
                       ...f,
-                      fund: e.target.value as ReceiptFund,
+                      fund: e.target.value as ReceiptFund | "",
                     }))
                   }
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 focus:border-sky-400"
+                  required
                 >
+                  <option value="">Select fund...</option>
                   <option value="grocery">Grocery Fund</option>
                   <option value="house">House Fund</option>
                 </select>
