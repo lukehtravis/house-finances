@@ -39,8 +39,6 @@ export function getFirestoreErrorMessage(error: FirestoreError | null): string {
       return "Invalid data provided. Please check your input and try again.";
     case "out-of-range":
       return "The value is out of the allowed range.";
-    case "unauthenticated":
-      return "Authentication required. Please sign in.";
     default:
       // For unknown errors, try to extract a meaningful message
       if (error.message) {
