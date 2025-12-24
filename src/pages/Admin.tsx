@@ -1628,7 +1628,7 @@ function MonthEditForm({
                       <th className="px-2 py-1 text-right">House Fund</th>
                       <th className="px-2 py-1 text-right">Shared</th>
                       <th className="px-2 py-1 text-right">Receipts</th>
-                      <th className="px-2 py-1 text-right">Adjust</th>
+                      <th className="px-2 py-1 text-right">Chores</th>
                       <th className="px-2 py-1 text-right font-semibold">
                         Total
                       </th>
