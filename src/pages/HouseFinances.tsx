@@ -3,7 +3,11 @@ import { format } from "date-fns";
 import { PageShell } from "../components/ui/PageShell";
 import { useCollection, useDocument } from "../hooks/useFirestore";
 import type { MonthRecord, Receipt, FundBalances } from "../lib/types";
-import { formatMonthKey, formatCurrency, getFirestoreErrorMessage } from "../lib/utils";
+import {
+  formatMonthKey,
+  formatCurrency,
+  getFirestoreErrorMessage,
+} from "../lib/utils";
 
 interface FundMonthData {
   monthKey: string;
@@ -181,6 +185,13 @@ export function HouseFinances() {
     return fundDataWithBalances;
   }, [fundDataWithBalances, viewMode, selectedYear]);
 
+  // Calculate total of all funds
+  const totalAllFunds = useMemo(() => {
+    return (
+      currentBalances.grocery + currentBalances.house + currentBalances.chore
+    );
+  }, [currentBalances]);
+
   function formatCurrency(amount: number): string {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -200,7 +211,9 @@ export function HouseFinances() {
     return (
       <PageShell title="House Finances">
         <p className="text-red-400">
-          {getFirestoreErrorMessage(monthsError || receiptsError || fundBalancesError)}
+          {getFirestoreErrorMessage(
+            monthsError || receiptsError || fundBalancesError
+          )}
         </p>
       </PageShell>
     );
@@ -209,6 +222,20 @@ export function HouseFinances() {
   return (
     <PageShell title="House Finances">
       <div className="space-y-8">
+        {/* Total All Funds Summary */}
+        <section className="rounded-md border-2 border-slate-700 bg-slate-900/70 p-6">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
+            Total All Funds
+          </h2>
+          <div
+            className={`text-5xl font-bold ${
+              totalAllFunds >= 0 ? "text-emerald-300" : "text-red-300"
+            }`}
+          >
+            {formatCurrency(totalAllFunds)}
+          </div>
+        </section>
+
         {/* Current Balances */}
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-md border border-slate-800 bg-slate-900/50 p-6">
@@ -232,8 +259,10 @@ export function HouseFinances() {
               )}
               {fundDataWithBalances.length > 0 && (
                 <p>
-                  Last updated: {formatMonthKey(
-                    fundDataWithBalances[fundDataWithBalances.length - 1]!.monthKey
+                  Last updated:{" "}
+                  {formatMonthKey(
+                    fundDataWithBalances[fundDataWithBalances.length - 1]!
+                      .monthKey
                   )}
                 </p>
               )}
@@ -245,23 +274,21 @@ export function HouseFinances() {
             </h3>
             <div
               className={`text-4xl font-bold ${
-                currentBalances.house >= 0
-                  ? "text-emerald-300"
-                  : "text-red-300"
+                currentBalances.house >= 0 ? "text-emerald-300" : "text-red-300"
               }`}
             >
               {formatCurrency(currentBalances.house)}
             </div>
             <div className="mt-2 space-y-1 text-xs text-slate-400">
               {initialBalances.house > 0 && (
-                <p>
-                  Starting balance: {formatCurrency(initialBalances.house)}
-                </p>
+                <p>Starting balance: {formatCurrency(initialBalances.house)}</p>
               )}
               {fundDataWithBalances.length > 0 && (
                 <p>
-                  Last updated: {formatMonthKey(
-                    fundDataWithBalances[fundDataWithBalances.length - 1]!.monthKey
+                  Last updated:{" "}
+                  {formatMonthKey(
+                    fundDataWithBalances[fundDataWithBalances.length - 1]!
+                      .monthKey
                   )}
                 </p>
               )}
@@ -273,23 +300,21 @@ export function HouseFinances() {
             </h3>
             <div
               className={`text-4xl font-bold ${
-                currentBalances.chore >= 0
-                  ? "text-emerald-300"
-                  : "text-red-300"
+                currentBalances.chore >= 0 ? "text-emerald-300" : "text-red-300"
               }`}
             >
               {formatCurrency(currentBalances.chore)}
             </div>
             <div className="mt-2 space-y-1 text-xs text-slate-400">
               {initialBalances.chore > 0 && (
-                <p>
-                  Starting balance: {formatCurrency(initialBalances.chore)}
-                </p>
+                <p>Starting balance: {formatCurrency(initialBalances.chore)}</p>
               )}
               {fundDataWithBalances.length > 0 && (
                 <p>
-                  Last updated: {formatMonthKey(
-                    fundDataWithBalances[fundDataWithBalances.length - 1]!.monthKey
+                  Last updated:{" "}
+                  {formatMonthKey(
+                    fundDataWithBalances[fundDataWithBalances.length - 1]!
+                      .monthKey
                   )}
                 </p>
               )}
