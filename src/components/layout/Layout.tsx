@@ -18,16 +18,13 @@ export function Layout({ children }: LayoutProps) {
           </div>
           <nav className="flex gap-2 text-slate-200">
             <NavLink to="/" className={navLinkClass}>
-              Home
+              House Finances
             </NavLink>
             <NavLink to="/rent" className={navLinkClass}>
               Rent
             </NavLink>
             <NavLink to="/receipts" className={navLinkClass}>
               Receipts
-            </NavLink>
-            <NavLink to="/house-finances" className={navLinkClass}>
-              House Finances
             </NavLink>
             <NavLink to="/admin" className={navLinkClass}>
               Admin
