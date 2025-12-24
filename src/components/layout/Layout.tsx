@@ -14,7 +14,7 @@ export function Layout({ children }: LayoutProps) {
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">
-            Co-op House Finances
+            $
           </div>
           <nav className="flex gap-2 text-slate-200">
             <NavLink to="/" className={navLinkClass}>
@@ -38,5 +38,3 @@ export function Layout({ children }: LayoutProps) {
     </div>
   );
 }
-
-
