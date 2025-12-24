@@ -17,6 +17,11 @@ interface FundMonthData {
     receiptsOut: number;
     netChange: number;
   };
+  chore: {
+    feesIn: number; // Positive feeAdjustments (fees applied)
+    creditsOut: number; // Negative feeAdjustments (discounts given)
+    netChange: number;
+  };
 }
 
 export function HouseFinances() {
@@ -68,6 +73,19 @@ export function HouseFinances() {
         .filter((r) => r.fund === "house")
         .reduce((sum, r) => sum + r.price, 0);
 
+      // Calculate chore fund changes from feeAdjustments
+      // Positive feeAdjustment = fee applied (goes into fund)
+      // Negative feeAdjustment = credit/discount (comes out of fund)
+      const choreFeesIn = Object.values(month.housemateSnapshots)
+        .filter((snap) => snap.feeAdjustment > 0)
+        .reduce((sum, snap) => sum + snap.feeAdjustment, 0);
+      const choreCreditsOut = Math.abs(
+        Object.values(month.housemateSnapshots)
+          .filter((snap) => snap.feeAdjustment < 0)
+          .reduce((sum, snap) => sum + snap.feeAdjustment, 0)
+      );
+      const choreNetChange = choreFeesIn - choreCreditsOut;
+
       return {
         monthKey: month.monthKey,
         grocery: {
@@ -80,6 +98,11 @@ export function HouseFinances() {
           receiptsOut: houseReceiptsOut,
           netChange: houseDuesIn - houseReceiptsOut,
         },
+        chore: {
+          feesIn: choreFeesIn,
+          creditsOut: choreCreditsOut,
+          netChange: choreNetChange,
+        },
       };
     });
   }, [months, receipts]);
@@ -88,18 +111,22 @@ export function HouseFinances() {
   const fundDataWithBalances = useMemo(() => {
     const initialGrocery = fundBalancesDoc?.initialGroceryBalance ?? 0;
     const initialHouse = fundBalancesDoc?.initialHouseBalance ?? 0;
+    const initialChore = fundBalancesDoc?.initialChoreBalance ?? 0;
 
     let groceryBalance = initialGrocery;
     let houseBalance = initialHouse;
+    let choreBalance = initialChore;
 
     return fundData.map((data) => {
       groceryBalance += data.grocery.netChange;
       houseBalance += data.house.netChange;
+      choreBalance += data.chore.netChange;
 
       return {
         ...data,
         groceryBalance,
         houseBalance,
+        choreBalance,
       };
     });
   }, [fundData, fundBalancesDoc]);
@@ -110,12 +137,14 @@ export function HouseFinances() {
       return {
         grocery: fundBalancesDoc?.initialGroceryBalance ?? 0,
         house: fundBalancesDoc?.initialHouseBalance ?? 0,
+        chore: fundBalancesDoc?.initialChoreBalance ?? 0,
       };
     }
     const last = fundDataWithBalances[fundDataWithBalances.length - 1]!;
     return {
       grocery: last.groceryBalance,
       house: last.houseBalance,
+      chore: last.choreBalance,
     };
   }, [fundDataWithBalances, fundBalancesDoc]);
 
@@ -124,6 +153,7 @@ export function HouseFinances() {
     return {
       grocery: fundBalancesDoc?.initialGroceryBalance ?? 0,
       house: fundBalancesDoc?.initialHouseBalance ?? 0,
+      chore: fundBalancesDoc?.initialChoreBalance ?? 0,
     };
   }, [fundBalancesDoc]);
 
@@ -180,7 +210,7 @@ export function HouseFinances() {
     <PageShell title="House Finances">
       <div className="space-y-8">
         {/* Current Balances */}
-        <section className="grid gap-4 sm:grid-cols-2">
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-md border border-slate-800 bg-slate-900/50 p-6">
             <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
               Grocery Fund
@@ -226,6 +256,34 @@ export function HouseFinances() {
               {initialBalances.house > 0 && (
                 <p>
                   Starting balance: {formatCurrency(initialBalances.house)}
+                </p>
+              )}
+              {fundDataWithBalances.length > 0 && (
+                <p>
+                  Last updated: {formatMonthKey(
+                    fundDataWithBalances[fundDataWithBalances.length - 1]!.monthKey
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/50 p-6">
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
+              Chore Fund
+            </h3>
+            <div
+              className={`text-4xl font-bold ${
+                currentBalances.chore >= 0
+                  ? "text-emerald-300"
+                  : "text-red-300"
+              }`}
+            >
+              {formatCurrency(currentBalances.chore)}
+            </div>
+            <div className="mt-2 space-y-1 text-xs text-slate-400">
+              {initialBalances.chore > 0 && (
+                <p>
+                  Starting balance: {formatCurrency(initialBalances.chore)}
                 </p>
               )}
               {fundDataWithBalances.length > 0 && (
@@ -405,6 +463,64 @@ export function HouseFinances() {
                           }`}
                         >
                           {formatCurrency(data.houseBalance)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Chore Fund Table */}
+            <div>
+              <h3 className="mb-3 text-lg font-semibold text-slate-50">
+                Chore Fund Breakdown
+              </h3>
+              <div className="overflow-x-auto rounded-md border border-slate-800">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-slate-900/80 text-xs uppercase tracking-wide text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2">Month</th>
+                      <th className="px-3 py-2 text-right">Fees In</th>
+                      <th className="px-3 py-2 text-right">Credits Out</th>
+                      <th className="px-3 py-2 text-right">Net Change</th>
+                      <th className="px-3 py-2 text-right font-semibold">
+                        Running Balance
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredData.map((data) => (
+                      <tr
+                        key={data.monthKey}
+                        className="border-t border-slate-800 hover:bg-slate-900/50"
+                      >
+                        <td className="px-3 py-2 font-medium text-slate-200">
+                          {formatMonthKey(data.monthKey)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-emerald-300">
+                          +{formatCurrency(data.chore.feesIn)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-red-300">
+                          -{formatCurrency(data.chore.creditsOut)}
+                        </td>
+                        <td
+                          className={`px-3 py-2 text-right font-semibold ${
+                            data.chore.netChange >= 0
+                              ? "text-emerald-300"
+                              : "text-red-300"
+                          }`}
+                        >
+                          {formatCurrency(data.chore.netChange)}
+                        </td>
+                        <td
+                          className={`px-3 py-2 text-right font-semibold ${
+                            data.choreBalance >= 0
+                              ? "text-emerald-300"
+                              : "text-red-300"
+                          }`}
+                        >
+                          {formatCurrency(data.choreBalance)}
                         </td>
                       </tr>
                     ))}

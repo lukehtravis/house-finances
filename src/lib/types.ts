@@ -61,6 +61,7 @@ export interface FundBalances {
   id: "balances"; // Singleton document ID
   initialGroceryBalance: number; // Starting balance from previous system
   initialHouseBalance: number; // Starting balance from previous system
+  initialChoreBalance?: number; // Starting balance for chore fund (optional, defaults to 0)
   grocery: number; // Current balance (deprecated, calculated on-demand)
   house: number; // Current balance (deprecated, calculated on-demand)
   lastUpdated: Timestamp;

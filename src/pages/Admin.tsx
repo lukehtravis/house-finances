@@ -153,6 +153,7 @@ export function Admin() {
   const [fundBalancesForm, setFundBalancesForm] = useState({
     initialGroceryBalance: "",
     initialHouseBalance: "",
+    initialChoreBalance: "",
   });
   const [savingFundBalances, setSavingFundBalances] = useState(false);
   const [fundBalancesFormError, setFundBalancesFormError] = useState<
@@ -170,11 +171,13 @@ export function Admin() {
           fundBalancesDoc.initialGroceryBalance ?? 0
         ),
         initialHouseBalance: String(fundBalancesDoc.initialHouseBalance ?? 0),
+        initialChoreBalance: String(fundBalancesDoc.initialChoreBalance ?? 0),
       });
     } else {
       setFundBalancesForm({
         initialGroceryBalance: "0",
         initialHouseBalance: "0",
+        initialChoreBalance: "0",
       });
     }
   }, [fundBalancesDoc]);
@@ -185,6 +188,7 @@ export function Admin() {
 
     const groceryNum = Number(fundBalancesForm.initialGroceryBalance);
     const houseNum = Number(fundBalancesForm.initialHouseBalance);
+    const choreNum = Number(fundBalancesForm.initialChoreBalance);
 
     if (!Number.isFinite(groceryNum) || groceryNum < 0) {
       setFundBalancesFormError(
@@ -196,12 +200,17 @@ export function Admin() {
       setFundBalancesFormError("House balance must be a non-negative number.");
       return;
     }
+    if (!Number.isFinite(choreNum) || choreNum < 0) {
+      setFundBalancesFormError("Chore balance must be a non-negative number.");
+      return;
+    }
 
     setSavingFundBalances(true);
     try {
       await setDocument<Omit<FundBalances, "id">>("fundBalances", "balances", {
         initialGroceryBalance: groceryNum,
         initialHouseBalance: houseNum,
+        initialChoreBalance: choreNum,
         grocery: 0, // Deprecated, kept for backwards compatibility
         house: 0, // Deprecated, kept for backwards compatibility
       } as Omit<FundBalances, "id">);
@@ -1269,7 +1278,7 @@ export function Admin() {
                     </div>
                   )}
 
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div>
                       <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
                         Initial Grocery Fund Balance ($)
@@ -1306,6 +1315,29 @@ export function Admin() {
                           setFundBalancesForm((f) => ({
                             ...f,
                             initialHouseBalance: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 focus:border-sky-400"
+                        placeholder="0.00"
+                      />
+                      <p className="mt-1 text-xs text-slate-500">
+                        Starting balance from previous system
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                        Initial Chore Fund Balance ($)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={fundBalancesForm.initialChoreBalance}
+                        onChange={(e) =>
+                          setFundBalancesForm((f) => ({
+                            ...f,
+                            initialChoreBalance: e.target.value,
                           }))
                         }
                         className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 focus:border-sky-400"
