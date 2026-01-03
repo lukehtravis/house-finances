@@ -1,5 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
+import { copyFileSync } from "fs";
+import { resolve } from "path";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -20,6 +22,21 @@ export default defineConfig({
           }
           next();
         });
+      },
+    },
+    // Copy 404.html to dist folder for GitHub Pages
+    {
+      name: "copy-404",
+      closeBundle() {
+        const root = process.cwd();
+        const src = resolve(root, "404.html");
+        const dest = resolve(root, "dist", "404.html");
+        try {
+          copyFileSync(src, dest);
+          console.log("✓ Copied 404.html to dist folder");
+        } catch (error) {
+          console.warn("⚠ Could not copy 404.html:", error);
+        }
       },
     },
   ],
