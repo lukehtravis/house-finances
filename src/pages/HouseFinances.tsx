@@ -8,6 +8,7 @@ import {
   formatCurrency,
   getFirestoreErrorMessage,
 } from "../lib/utils";
+import { FundNetChangeChart } from "../components/domain/FundNetChangeChart";
 
 interface FundMonthData {
   monthKey: string;
@@ -372,6 +373,58 @@ export function HouseFinances() {
             ))}
           </div>
         </section>
+
+        {/* Charts */}
+        {filteredData.length > 1 && (
+          <section className="space-y-6">
+            {/* Total Balance Over Time */}
+            <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+              <FundNetChangeChart
+                data={filteredData.map((d) => ({
+                  monthKey: d.monthKey,
+                  value: d.groceryBalance + d.houseBalance + d.choreBalance - (initialBalances.grocery + initialBalances.house + initialBalances.chore),
+                }))}
+                label="Total Balance"
+              />
+            </div>
+
+            {/* Net Change Per Fund */}
+            <div>
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
+                Running Balance by Fund
+              </h3>
+              <div className="grid gap-4 lg:grid-cols-3">
+                <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+                  <FundNetChangeChart
+                    data={filteredData.map((d) => ({
+                      monthKey: d.monthKey,
+                      value: d.groceryBalance,
+                    }))}
+                    label="Grocery Fund"
+                  />
+                </div>
+                <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+                  <FundNetChangeChart
+                    data={filteredData.map((d) => ({
+                      monthKey: d.monthKey,
+                      value: d.houseBalance - initialBalances.house,
+                    }))}
+                    label="House Fund"
+                  />
+                </div>
+                <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+                  <FundNetChangeChart
+                    data={filteredData.map((d) => ({
+                      monthKey: d.monthKey,
+                      value: d.choreBalance,
+                    }))}
+                    label="Chore Fund"
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Monthly Breakdown Table */}
         {filteredData.length === 0 ? (
