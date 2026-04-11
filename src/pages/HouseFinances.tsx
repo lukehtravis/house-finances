@@ -30,8 +30,7 @@ interface FundMonthData {
 }
 
 export function HouseFinances() {
-  const [viewMode, setViewMode] = useState<"all" | "last12">("last12");
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<"all" | "last3" | "last6" | "last12">("all");
 
   const {
     data: months,
@@ -162,29 +161,13 @@ export function HouseFinances() {
     };
   }, [fundBalancesDoc]);
 
-  // Get available years from months
-  const availableYears = useMemo(() => {
-    if (!months) return [];
-    const years = new Set<number>();
-    months.forEach((m) => {
-      const year = Number(m.monthKey.split("-")[0]);
-      years.add(year);
-    });
-    return Array.from(years).sort();
-  }, [months]);
-
   // Filter data based on view mode
   const filteredData = useMemo(() => {
-    if (viewMode === "last12") {
-      return fundDataWithBalances.slice(-12);
-    } else if (selectedYear !== null) {
-      return fundDataWithBalances.filter((d) => {
-        const year = Number(d.monthKey.split("-")[0]);
-        return year === selectedYear;
-      });
-    }
+    if (viewMode === "last3") return fundDataWithBalances.slice(-3);
+    if (viewMode === "last6") return fundDataWithBalances.slice(-6);
+    if (viewMode === "last12") return fundDataWithBalances.slice(-12);
     return fundDataWithBalances;
-  }, [fundDataWithBalances, viewMode, selectedYear]);
+  }, [fundDataWithBalances, viewMode]);
 
   // Calculate total of all funds
   const totalAllFunds = useMemo(() => {
@@ -326,49 +309,18 @@ export function HouseFinances() {
         {/* Time Controls */}
         <section>
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setViewMode("last12");
-                setSelectedYear(null);
-              }}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                viewMode === "last12"
-                  ? "bg-sky-500 text-slate-950"
-                  : "border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
-              }`}
-            >
-              Last 12 Months
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setViewMode("all");
-                setSelectedYear(null);
-              }}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                viewMode === "all" && selectedYear === null
-                  ? "bg-sky-500 text-slate-950"
-                  : "border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
-              }`}
-            >
-              All Time
-            </button>
-            {availableYears.map((year) => (
+            {(["all", "last3", "last6", "last12"] as const).map((mode) => (
               <button
-                key={year}
+                key={mode}
                 type="button"
-                onClick={() => {
-                  setViewMode("all");
-                  setSelectedYear(year);
-                }}
+                onClick={() => setViewMode(mode)}
                 className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  selectedYear === year
+                  viewMode === mode
                     ? "bg-sky-500 text-slate-950"
                     : "border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
                 }`}
               >
-                {year}
+                {{ all: "All Time", last3: "Last 3 Months", last6: "Last 6 Months", last12: "1 Year" }[mode]}
               </button>
             ))}
           </div>
@@ -377,14 +329,25 @@ export function HouseFinances() {
         {/* Charts */}
         {filteredData.length > 1 && (
           <section className="space-y-6">
-            {/* Total Balance Over Time */}
+            {/* Total Balance (with starting balance) */}
+            <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+              <FundNetChangeChart
+                data={filteredData.map((d) => ({
+                  monthKey: d.monthKey,
+                  value: d.groceryBalance + d.houseBalance + d.choreBalance,
+                }))}
+                label="Total Balance (Includes Starting Balance)"
+              />
+            </div>
+
+            {/* Total Balance (minus starting balance) */}
             <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
               <FundNetChangeChart
                 data={filteredData.map((d) => ({
                   monthKey: d.monthKey,
                   value: d.groceryBalance + d.houseBalance + d.choreBalance - (initialBalances.grocery + initialBalances.house + initialBalances.chore),
                 }))}
-                label="Total Balance"
+                label="Total Balance (- starting balance)"
               />
             </div>
 

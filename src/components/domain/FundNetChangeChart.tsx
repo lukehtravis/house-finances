@@ -64,8 +64,8 @@ export function FundNetChangeChart({ data, label }: Props) {
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={GREEN} />
-                <stop offset={`${zeroPercent}%`} stopColor={GREEN} />
-                <stop offset={`${zeroPercent}%`} stopColor={RED} />
+                <stop offset={`${Math.max(0, zeroPercent! - 12)}%`} stopColor={GREEN} />
+                <stop offset={`${Math.min(100, zeroPercent! + 12)}%`} stopColor={RED} />
                 <stop offset="100%" stopColor={RED} />
               </linearGradient>
             </defs>
