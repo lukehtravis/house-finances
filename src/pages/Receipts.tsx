@@ -60,11 +60,6 @@ export function Receipts() {
     orderDirection: "asc",
   });
 
-  const activeHousemates = useMemo(
-    () => housemates.filter((h) => h.active),
-    [housemates]
-  );
-
   function getMonthKeyFromDate(dateString: string): string {
     // Receipts are assigned to the NEXT month (e.g., December receipts → January)
     // because rent is calculated at the beginning of the month, before expenses are known
@@ -73,6 +68,27 @@ export function Receipts() {
     nextMonth.setMonth(nextMonth.getMonth() + 1); // Add one month
     return format(nextMonth, "yyyy-MM");
   }
+
+  // Housemates eligible to submit a receipt right now. Active housemates
+  // always count. Archived housemates count if their lastMonthKey covers
+  // the receipt's target month (e.g., May receipts for someone whose final
+  // month is June).
+  const currentTargetMonthKey = useMemo(
+    () => getMonthKeyFromDate(getCurrentPSTDateString()),
+    []
+  );
+  const eligibleHousemates = useMemo(
+    () =>
+      housemates.filter((h) => {
+        if (h.active && !h.archived) return true;
+        if (h.archived && h.lastMonthKey) {
+          // include if their final month is the current target month or later
+          return h.lastMonthKey >= currentTargetMonthKey;
+        }
+        return false;
+      }),
+    [housemates, currentTargetMonthKey]
+  );
 
   const [form, setForm] = useState<ReceiptFormState>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
@@ -232,9 +248,10 @@ export function Receipts() {
                   required
                 >
                   <option value="">Select person...</option>
-                  {activeHousemates.map((h) => (
+                  {eligibleHousemates.map((h) => (
                     <option key={h.id} value={h.id}>
                       {h.name}
+                      {h.archived ? " (archived)" : ""}
                     </option>
                   ))}
                 </select>
@@ -339,9 +356,10 @@ export function Receipts() {
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 outline-none ring-0 focus:border-sky-400"
               >
                 <option value="">All people</option>
-                {activeHousemates.map((h) => (
+                {housemates.map((h) => (
                   <option key={h.id} value={h.id}>
                     {h.name}
+                    {h.archived ? " (archived)" : ""}
                   </option>
                 ))}
               </select>

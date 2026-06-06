@@ -265,6 +265,11 @@ export function RentMonth() {
                   >
                     <td className="px-3 py-2 font-medium text-slate-200">
                       {item.housemate.name}
+                      {item.transitionOut && (
+                        <span className="ml-2 rounded-full bg-amber-900/60 px-2 py-0.5 text-[10px] font-medium uppercase text-amber-200">
+                          Moving out
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right text-slate-300">
                       {formatCurrency(item.dues.roomRent)}
@@ -357,6 +362,11 @@ export function RentMonth() {
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="font-semibold text-slate-200">
                     {item.housemate.name}
+                    {item.transitionOut && (
+                      <span className="ml-2 rounded-full bg-amber-900/60 px-2 py-0.5 text-[10px] font-medium uppercase text-amber-200">
+                        Moving out
+                      </span>
+                    )}
                   </h3>
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-semibold ${status.color} ${status.bgColor}`}

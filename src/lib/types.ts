@@ -6,6 +6,19 @@ export interface Housemate {
   roomRent: number;
   sharedCostShares: Record<string, number>;
   active: boolean;
+  /**
+   * True when the housemate has fully moved out. Archived housemates are
+   * excluded from new month snapshots. They may still appear in past month
+   * snapshots (preserved as historical records).
+   */
+  archived?: boolean;
+  /**
+   * The final monthKey ("YYYY-MM") the housemate is partially billed for.
+   * In that month they only owe utilities (for prior month's bills),
+   * receipts, and chores — not room rent, dues, or shared costs.
+   * Set when the housemate is archived.
+   */
+  lastMonthKey?: string;
   createdAt: Timestamp;
 }
 
@@ -33,6 +46,13 @@ export type PaidStatus = "unpaid" | "partial" | "paid";
 export interface MonthHousemateSnapshot {
   paid: PaidStatus;
   feeAdjustment: number;
+  /**
+   * True when this is the housemate's transition-out month. They owe only
+   * utilities (prior month's bills), receipts, and chores. Room rent,
+   * grocery dues, house fund dues, and shared costs are skipped.
+   * Other (remaining) housemates absorb the gap on shared costs.
+   */
+  transitionOut?: boolean;
 }
 
 export interface MonthRecord {

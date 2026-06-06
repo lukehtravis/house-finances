@@ -21,6 +21,7 @@ export interface MonthSummaryItem {
   housemate: Housemate;
   dues: HousemateDues;
   paid: "unpaid" | "partial" | "paid";
+  transitionOut: boolean;
 }
 
 export interface CalculateHousemateDuesParams {
@@ -58,6 +59,16 @@ export function calculateSharedCostForHousemate(
 }
 
 /**
+ * Returns true if a snapshot represents a transitioning-out housemate.
+ * Backwards compatible: snapshots without the field behave as false.
+ */
+function isTransitionOut(
+  snapshot: MonthHousemateSnapshot | undefined
+): boolean {
+  return snapshot?.transitionOut === true;
+}
+
+/**
  * Calculate all dues for a single housemate in a given month.
  */
 export function calculateHousemateDues(
@@ -70,13 +81,23 @@ export function calculateHousemateDues(
     monthRecord.housemateSnapshots
   ).length;
 
-  // Room Rent: use profile value
-  const roomRent = housemate.roomRent;
-
-  // Get snapshot for this housemate (for fee adjustment)
+  // Get snapshot for this housemate (for fee adjustment + transition flag)
   const snapshot = monthRecord.housemateSnapshots[housemate.id];
+  const transitionOut = isTransitionOut(snapshot);
 
-  // Utilities: sum of all utilities divided by snapshot count
+  // Count of housemates who will pay forward-looking charges (room rent,
+  // dues, shared costs). Excludes anyone transitioning out, since the
+  // remaining housemates absorb the gap on even-split shared costs.
+  const forwardLookingCount = Object.values(
+    monthRecord.housemateSnapshots
+  ).filter((s) => !isTransitionOut(s)).length;
+
+  // Room Rent: zeroed for transition-out housemates
+  const roomRent = transitionOut ? 0 : housemate.roomRent;
+
+  // Utilities: sum of all utilities divided by full snapshot count
+  // (transition-out housemates still owe utilities — these are the prior
+  // month's bills that they were there for)
   const totalUtilities = Object.values(monthRecord.utilities).reduce(
     (sum, val) => sum + val,
     0
@@ -84,42 +105,51 @@ export function calculateHousemateDues(
   const utilities =
     snapshotHousemateCount > 0 ? totalUtilities / snapshotHousemateCount : 0;
 
-  // Dues (same for everyone)
-  const groceryDues = monthRecord.groceryDues;
-  const houseFundDues = monthRecord.houseFundDues;
+  // Dues (forward-looking — zeroed for transition-out)
+  const groceryDues = transitionOut ? 0 : monthRecord.groceryDues;
+  const houseFundDues = transitionOut ? 0 : monthRecord.houseFundDues;
 
-  // Shared Costs
+  // Shared Costs (forward-looking — zeroed for transition-out;
+  // remaining housemates' divisor uses forwardLookingCount)
   const sharedCostsBreakdown: Record<string, number> = {};
   let sharedCostsTotal = 0;
 
   const activeSharedCosts = sharedCosts.filter((sc) => sc.active);
   for (const sharedCost of activeSharedCosts) {
+    if (transitionOut) {
+      sharedCostsBreakdown[sharedCost.name] = 0;
+      continue;
+    }
     if (sharedCost.splitMethod === "shares") {
-      // Calculate total shares across all housemates in snapshot
+      // Total shares across non-transition-out housemates only
       let totalShares = 0;
-      Object.keys(monthRecord.housemateSnapshots).forEach((housemateId) => {
-        const h = allHousemates.find((hm) => hm.id === housemateId);
-        if (h) {
-          totalShares += h.sharedCostShares[sharedCost.id] ?? 0;
+      Object.entries(monthRecord.housemateSnapshots).forEach(
+        ([housemateId, snap]) => {
+          if (isTransitionOut(snap)) return;
+          const h = allHousemates.find((hm) => hm.id === housemateId);
+          if (h) {
+            totalShares += h.sharedCostShares[sharedCost.id] ?? 0;
+          }
         }
-      });
+      );
 
       const housemateShares = housemate.sharedCostShares[sharedCost.id] ?? 0;
       const amount = calculateSharedCostForHousemate(
         sharedCost,
         housemateShares,
         totalShares,
-        snapshotHousemateCount
+        forwardLookingCount
       );
       sharedCostsBreakdown[sharedCost.name] = amount;
       sharedCostsTotal += amount;
     } else {
-      // "even" split
+      // "even" split — divide by forward-looking count so the remaining
+      // housemates absorb the transition-out person's share
       const amount = calculateSharedCostForHousemate(
         sharedCost,
         0, // not used for even split
         0, // not used for even split
-        snapshotHousemateCount
+        forwardLookingCount
       );
       sharedCostsBreakdown[sharedCost.name] = amount;
       sharedCostsTotal += amount;
@@ -186,6 +216,7 @@ export function calculateMonthSummary(
         housemate,
         dues,
         paid: snapshot.paid,
+        transitionOut: snapshot.transitionOut === true,
       });
     }
   );

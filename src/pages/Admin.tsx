@@ -95,6 +95,22 @@ export function Admin() {
     [housemates, editingHousemateId]
   );
 
+  // Archive workflow state
+  const [archivingHousemateId, setArchivingHousemateId] = useState<string | null>(
+    null
+  );
+  const [archiveForm, setArchiveForm] = useState({
+    mode: "transition" as "transition" | "immediate",
+    lastMonthKey: "",
+  });
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [archiveSubmitting, setArchiveSubmitting] = useState(false);
+
+  const archivingHousemate = useMemo(
+    () => housemates.find((h) => h.id === archivingHousemateId) ?? null,
+    [housemates, archivingHousemateId]
+  );
+
   // Shared Costs
   const {
     data: sharedCosts,
@@ -447,6 +463,114 @@ export function Admin() {
     >);
   }
 
+  function openArchiveForm(h: Housemate) {
+    setArchiveError(null);
+    // Default last month to most recent existing month, or current month
+    const defaultLastMonth =
+      months.length > 0 ? months[0]!.monthKey : format(new Date(), "yyyy-MM");
+    setArchiveForm({
+      mode: "transition",
+      lastMonthKey: defaultLastMonth,
+    });
+    setArchivingHousemateId(h.id);
+  }
+
+  async function handleArchiveSubmit() {
+    if (!archivingHousemate) return;
+    setArchiveError(null);
+
+    const transitionMonthKey =
+      archiveForm.mode === "transition" ? archiveForm.lastMonthKey : null;
+
+    setArchiveSubmitting(true);
+    try {
+      // 1. Update housemate doc
+      const housemateUpdate: Record<string, unknown> = {
+        archived: true,
+        active: false,
+      };
+      if (transitionMonthKey) {
+        housemateUpdate.lastMonthKey = transitionMonthKey;
+      }
+      await updateDocument(
+        "housemates",
+        archivingHousemate.id,
+        housemateUpdate
+      );
+
+      // 2. If transition month exists and the housemate is in its snapshot,
+      //    mark the snapshot as transitionOut so the month editor / rent
+      //    page show partial billing.
+      if (transitionMonthKey) {
+        const targetMonth = months.find(
+          (m) => m.monthKey === transitionMonthKey
+        );
+        if (targetMonth && targetMonth.housemateSnapshots[archivingHousemate.id]) {
+          const updatedSnapshots = {
+            ...targetMonth.housemateSnapshots,
+            [archivingHousemate.id]: {
+              ...targetMonth.housemateSnapshots[archivingHousemate.id]!,
+              transitionOut: true,
+            },
+          };
+          await updateDocument("months", targetMonth.id, {
+            housemateSnapshots: updatedSnapshots,
+          } as Record<string, unknown>);
+        }
+      }
+
+      setArchivingHousemateId(null);
+    } catch (err) {
+      setArchiveError(
+        err instanceof Error ? err.message : "Failed to archive housemate."
+      );
+    } finally {
+      setArchiveSubmitting(false);
+    }
+  }
+
+  async function handleUnarchive(h: Housemate) {
+    if (
+      !confirm(
+        `Unarchive ${h.name}? They'll be reactivated and added to new months going forward. Existing months won't be changed automatically.`
+      )
+    )
+      return;
+
+    try {
+      // Clear archive fields and reactivate
+      await updateDocument("housemates", h.id, {
+        archived: false,
+        active: true,
+        lastMonthKey: null,
+      } as Record<string, unknown>);
+
+      // Remove transitionOut from any snapshots referencing this housemate
+      // (in their previously-set lastMonthKey, if any)
+      if (h.lastMonthKey) {
+        const targetMonth = months.find((m) => m.monthKey === h.lastMonthKey);
+        if (
+          targetMonth &&
+          targetMonth.housemateSnapshots[h.id]?.transitionOut
+        ) {
+          const existing = targetMonth.housemateSnapshots[h.id]!;
+          const { transitionOut: _omit, ...rest } = existing;
+          const updatedSnapshots = {
+            ...targetMonth.housemateSnapshots,
+            [h.id]: rest,
+          };
+          await updateDocument("months", targetMonth.id, {
+            housemateSnapshots: updatedSnapshots,
+          } as Record<string, unknown>);
+        }
+      }
+    } catch (err) {
+      alert(
+        err instanceof Error ? err.message : "Failed to unarchive housemate."
+      );
+    }
+  }
+
   // Month management functions
   function getNextMonthKey(): string {
     if (months.length === 0) {
@@ -478,13 +602,18 @@ export function Admin() {
 
     setCreatingMonth(true);
     try {
-      const activeHousematesList = housemates.filter((h) => h.active);
+      // Exclude archived housemates from new month snapshots.
+      // Their lastMonthKey marks their final billing month — anything after that
+      // they're fully gone.
+      const eligibleHousematesList = housemates.filter(
+        (h) => h.active && !h.archived
+      );
       const housemateSnapshots: Record<
         string,
         { paid: PaidStatus; feeAdjustment: number }
       > = {};
 
-      activeHousematesList.forEach((h) => {
+      eligibleHousematesList.forEach((h) => {
         housemateSnapshots[h.id] = {
           paid: "unpaid",
           feeAdjustment: 0,
@@ -633,41 +762,200 @@ export function Admin() {
                       </tr>
                     </thead>
                     <tbody>
-                      {housemates.map((h) => (
-                        <tr key={h.id} className="border-t border-slate-800">
-                          <td className="px-3 py-2">{h.name}</td>
-                          <td className="px-3 py-2">
-                            ${h.roomRent.toFixed(2)}
-                          </td>
-                          <td className="px-3 py-2">
-                            <button
-                              type="button"
-                              onClick={() => toggleHousemateActive(h)}
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                h.active
-                                  ? "bg-emerald-900/60 text-emerald-200"
-                                  : "bg-slate-800 text-slate-300"
-                              }`}
-                            >
-                              {h.active ? "Active" : "Inactive"}
-                            </button>
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={() => setEditingHousemateId(h.id)}
-                              className="text-xs font-medium text-sky-300 hover:text-sky-200"
-                            >
-                              Edit
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {housemates.map((h) => {
+                        const statusLabel = h.archived
+                          ? "Archived"
+                          : h.active
+                            ? "Active"
+                            : "Inactive";
+                        const statusClass = h.archived
+                          ? "bg-amber-900/60 text-amber-200"
+                          : h.active
+                            ? "bg-emerald-900/60 text-emerald-200"
+                            : "bg-slate-800 text-slate-300";
+                        return (
+                          <tr key={h.id} className="border-t border-slate-800">
+                            <td className="px-3 py-2">
+                              {h.name}
+                              {h.archived && h.lastMonthKey && (
+                                <span className="ml-2 text-xs text-slate-400">
+                                  (last: {formatMonthKey(h.lastMonthKey)})
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              ${h.roomRent.toFixed(2)}
+                            </td>
+                            <td className="px-3 py-2">
+                              {h.archived ? (
+                                <span
+                                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusClass}`}
+                                >
+                                  {statusLabel}
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleHousemateActive(h)}
+                                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusClass}`}
+                                >
+                                  {statusLabel}
+                                </button>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="flex justify-end gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingHousemateId(h.id)}
+                                  className="text-xs font-medium text-sky-300 hover:text-sky-200"
+                                >
+                                  Edit
+                                </button>
+                                {h.archived ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleUnarchive(h)}
+                                    className="text-xs font-medium text-emerald-300 hover:text-emerald-200"
+                                  >
+                                    Unarchive
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => openArchiveForm(h)}
+                                    className="text-xs font-medium text-amber-300 hover:text-amber-200"
+                                  >
+                                    Archive
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               )}
             </section>
+
+            {/* Archive form */}
+            {archivingHousemate && (
+              <section className="border-t border-slate-800 pt-4">
+                <h3 className="mb-2 text-sm font-semibold text-slate-100">
+                  Archive {archivingHousemate.name}
+                </h3>
+                <p className="mb-3 text-xs text-slate-400">
+                  Archived housemates won't appear in newly created months.
+                  Existing months are preserved as historical records.
+                </p>
+                {archiveError && (
+                  <p className="mb-2 text-xs font-medium text-red-400">
+                    {archiveError}
+                  </p>
+                )}
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                      Final billing month
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-start gap-2 text-xs text-slate-200">
+                        <input
+                          type="radio"
+                          name="archive-mode"
+                          checked={archiveForm.mode === "transition"}
+                          onChange={() =>
+                            setArchiveForm((f) => ({
+                              ...f,
+                              mode: "transition",
+                            }))
+                          }
+                          className="mt-0.5"
+                        />
+                        <span>
+                          <span className="font-medium">
+                            Transition out in a specific month
+                          </span>
+                          <span className="ml-1 text-slate-400">
+                            — they'll be billed only for utilities, receipts,
+                            and chores that month (no room rent, dues, or
+                            shared costs).
+                          </span>
+                        </span>
+                      </label>
+                      {archiveForm.mode === "transition" && (
+                        <div className="ml-6">
+                          <select
+                            value={archiveForm.lastMonthKey}
+                            onChange={(e) =>
+                              setArchiveForm((f) => ({
+                                ...f,
+                                lastMonthKey: e.target.value,
+                              }))
+                            }
+                            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 outline-none ring-0 focus:border-sky-400"
+                          >
+                            {months.map((m) => (
+                              <option key={m.monthKey} value={m.monthKey}>
+                                {formatMonthKey(m.monthKey)}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1 text-xs text-slate-500">
+                            If they're in this month's snapshot, it'll be
+                            updated to reflect partial billing.
+                          </p>
+                        </div>
+                      )}
+                      <label className="flex items-start gap-2 text-xs text-slate-200">
+                        <input
+                          type="radio"
+                          name="archive-mode"
+                          checked={archiveForm.mode === "immediate"}
+                          onChange={() =>
+                            setArchiveForm((f) => ({
+                              ...f,
+                              mode: "immediate",
+                            }))
+                          }
+                          className="mt-0.5"
+                        />
+                        <span>
+                          <span className="font-medium">
+                            Archive without a transition month
+                          </span>
+                          <span className="ml-1 text-slate-400">
+                            — they're fully gone. Existing months untouched;
+                            new months exclude them.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleArchiveSubmit()}
+                      disabled={archiveSubmitting}
+                      className="rounded-md bg-amber-500 px-4 py-1.5 text-sm font-semibold text-slate-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {archiveSubmitting
+                        ? "Archiving..."
+                        : `Archive ${archivingHousemate.name}`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setArchivingHousemateId(null)}
+                      className="text-sm font-medium text-slate-300 hover:text-slate-100"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section className="border-t border-slate-800 pt-4">
               <h3 className="mb-2 text-sm font-semibold text-slate-100">
@@ -1389,7 +1677,10 @@ function MonthEditForm({
   const [groceryDues, setGroceryDues] = useState("");
   const [houseFundDues, setHouseFundDues] = useState("");
   const [snapshots, setSnapshots] = useState<
-    Record<string, { paid: PaidStatus; feeAdjustment: string }>
+    Record<
+      string,
+      { paid: PaidStatus; feeAdjustment: string; transitionOut: boolean }
+    >
   >({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1409,12 +1700,15 @@ function MonthEditForm({
     setGroceryDues(String(month.groceryDues));
     setHouseFundDues(String(month.houseFundDues));
 
-    const snaps: Record<string, { paid: PaidStatus; feeAdjustment: string }> =
-      {};
+    const snaps: Record<
+      string,
+      { paid: PaidStatus; feeAdjustment: string; transitionOut: boolean }
+    > = {};
     Object.entries(month.housemateSnapshots).forEach(([id, snap]) => {
       snaps[id] = {
         paid: snap.paid,
         feeAdjustment: String(snap.feeAdjustment),
+        transitionOut: snap.transitionOut === true,
       };
     });
     setSnapshots(snaps);
@@ -1456,15 +1750,23 @@ function MonthEditForm({
 
     const updatedSnapshots: Record<
       string,
-      { paid: PaidStatus; feeAdjustment: number }
+      { paid: PaidStatus; feeAdjustment: number; transitionOut?: boolean }
     > = {};
     Object.entries(snapshots).forEach(([id, snap]) => {
       const feeAdj = Number(snap.feeAdjustment);
 
-      updatedSnapshots[id] = {
+      const entry: {
+        paid: PaidStatus;
+        feeAdjustment: number;
+        transitionOut?: boolean;
+      } = {
         paid: snap.paid,
         feeAdjustment: Number.isFinite(feeAdj) ? feeAdj : 0,
       };
+      if (snap.transitionOut) {
+        entry.transitionOut = true;
+      }
+      updatedSnapshots[id] = entry;
     });
 
     setSaving(true);
@@ -1582,6 +1884,12 @@ function MonthEditForm({
                   <th className="px-3 py-2">Name</th>
                   <th className="px-3 py-2">Paid Status</th>
                   <th className="px-3 py-2">Chores ($)</th>
+                  <th
+                    className="px-3 py-2"
+                    title="When checked, this housemate is billed only for utilities, receipts, and chores this month — no room rent, dues, or shared costs"
+                  >
+                    Transition out
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1594,6 +1902,11 @@ function MonthEditForm({
                     <tr key={housemateId} className="border-t border-slate-800">
                       <td className="px-3 py-2 text-slate-300">
                         {housemate.name}
+                        {snap.transitionOut && (
+                          <span className="ml-2 rounded-full bg-amber-900/60 px-2 py-0.5 text-[10px] font-medium uppercase text-amber-200">
+                            Moving out
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         <select
@@ -1631,6 +1944,25 @@ function MonthEditForm({
                           className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none ring-0 focus:border-sky-400"
                           placeholder="0.00"
                         />
+                      </td>
+                      <td className="px-3 py-2">
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={snap.transitionOut}
+                            onChange={(e) =>
+                              setSnapshots((s) => ({
+                                ...s,
+                                [housemateId]: {
+                                  ...s[housemateId]!,
+                                  transitionOut: e.target.checked,
+                                },
+                              }))
+                            }
+                            className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-amber-400"
+                          />
+                          Moving out
+                        </label>
                       </td>
                     </tr>
                   );
