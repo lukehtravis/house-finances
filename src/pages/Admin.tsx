@@ -15,7 +15,11 @@ import type {
   MonthRecord,
   PaidStatus,
   FundBalances,
+  Receipt,
+  Payout,
 } from "../lib/types";
+import { calculateHousemateDues } from "../lib/calculations";
+import { Timestamp } from "firebase/firestore";
 import { format } from "date-fns";
 import { useMonthCalculations } from "../hooks/useMonthCalculations";
 import {
@@ -68,7 +72,12 @@ const defaultSettings: Settings = {
 
 export function Admin() {
   const [activeTab, setActiveTab] = useState<
-    "housemates" | "settings" | "shared-costs" | "months" | "fund-balances"
+    | "housemates"
+    | "settings"
+    | "shared-costs"
+    | "months"
+    | "fund-balances"
+    | "payouts"
   >("housemates");
 
   // Housemates
@@ -147,6 +156,15 @@ export function Admin() {
     error: monthsError,
   } = useCollection<MonthRecord>("months", {
     orderByField: "monthKey",
+    orderDirection: "desc",
+  });
+
+  // Receipts (needed for credit seeding at month creation + payout detection)
+  const { data: receipts } = useCollection<Receipt>("receipts");
+
+  // Payouts (manual credit settlements to departed housemates)
+  const { data: payouts } = useCollection<Payout>("payouts", {
+    orderByField: "createdAt",
     orderDirection: "desc",
   });
 
@@ -571,6 +589,111 @@ export function Admin() {
     }
   }
 
+  // ─── Payouts ────────────────────────────────────────────────────────────
+  // Detect pending payouts: a housemate's transitionOut month ended with a
+  // negative grandTotal (their receipts exceeded what they owed) AND no
+  // payout has been recorded yet.
+  interface PendingPayout {
+    housemate: Housemate;
+    monthKey: string;
+    amount: number; // Positive — what the house owes them.
+  }
+
+  const pendingPayouts = useMemo<PendingPayout[]>(() => {
+    if (!months || !housemates || !receipts || !sharedCosts) return [];
+    const pending: PendingPayout[] = [];
+
+    for (const month of months) {
+      for (const [housemateId, snap] of Object.entries(
+        month.housemateSnapshots
+      )) {
+        if (!snap.transitionOut) continue;
+        const housemate = housemates.find((h) => h.id === housemateId);
+        if (!housemate) continue;
+
+        const dues = calculateHousemateDues({
+          housemate,
+          monthRecord: month,
+          receipts,
+          sharedCosts,
+          allHousemates: housemates,
+        });
+        if (dues.grandTotal >= 0) continue;
+
+        // Already paid out?
+        const alreadyPaid = payouts.some(
+          (p) =>
+            p.housemateId === housemateId && p.monthKey === month.monthKey
+        );
+        if (alreadyPaid) continue;
+
+        pending.push({
+          housemate,
+          monthKey: month.monthKey,
+          amount: Math.round(-dues.grandTotal * 100) / 100,
+        });
+      }
+    }
+    return pending;
+  }, [months, housemates, receipts, sharedCosts, payouts]);
+
+  const [payoutFormFor, setPayoutFormFor] = useState<{
+    housemateId: string;
+    monthKey: string;
+    amount: number;
+  } | null>(null);
+  const [payoutForm, setPayoutForm] = useState({
+    paidDate: format(new Date(), "yyyy-MM-dd"),
+    note: "",
+  });
+  const [recordingPayout, setRecordingPayout] = useState(false);
+  const [payoutError, setPayoutError] = useState<string | null>(null);
+
+  function openPayoutForm(pending: PendingPayout) {
+    setPayoutError(null);
+    setPayoutForm({
+      paidDate: format(new Date(), "yyyy-MM-dd"),
+      note: "",
+    });
+    setPayoutFormFor({
+      housemateId: pending.housemate.id,
+      monthKey: pending.monthKey,
+      amount: pending.amount,
+    });
+  }
+
+  async function handleRecordPayout() {
+    if (!payoutFormFor) return;
+    setPayoutError(null);
+
+    // Parse the date string as a local midnight Date.
+    const [yyyy, mm, dd] = payoutForm.paidDate.split("-").map(Number);
+    if (!yyyy || !mm || !dd) {
+      setPayoutError("Invalid date.");
+      return;
+    }
+    const paidDate = new Date(yyyy, mm - 1, dd);
+
+    setRecordingPayout(true);
+    try {
+      await addDocument<Omit<Payout, "id" | "createdAt">>("payouts", {
+        housemateId: payoutFormFor.housemateId,
+        monthKey: payoutFormFor.monthKey,
+        amount: payoutFormFor.amount,
+        fund: "house",
+        paidDate: Timestamp.fromDate(paidDate),
+        ...(payoutForm.note.trim() ? { note: payoutForm.note.trim() } : {}),
+      });
+      setPayoutFormFor(null);
+    } catch (err) {
+      setPayoutError(
+        err instanceof Error ? err.message : "Failed to record payout."
+      );
+    } finally {
+      setRecordingPayout(false);
+    }
+  }
+
   // Month management functions
   function getNextMonthKey(): string {
     if (months.length === 0) {
@@ -608,16 +731,52 @@ export function Admin() {
       const eligibleHousematesList = housemates.filter(
         (h) => h.active && !h.archived
       );
+
+      // Determine prior month for credit seeding. `months` is sorted desc by
+      // monthKey, so months[0] is the latest existing month.
+      const priorMonth = months[0];
+
       const housemateSnapshots: Record<
         string,
-        { paid: PaidStatus; feeAdjustment: number }
+        {
+          paid: PaidStatus;
+          feeAdjustment: number;
+          creditFromPriorMonth?: number;
+        }
       > = {};
 
       eligibleHousematesList.forEach((h) => {
-        housemateSnapshots[h.id] = {
+        const snapshot: {
+          paid: PaidStatus;
+          feeAdjustment: number;
+          creditFromPriorMonth?: number;
+        } = {
           paid: "unpaid",
           feeAdjustment: 0,
         };
+
+        // Seed credit if this housemate had a negative grandTotal in the
+        // prior month. We exclude transitionOut housemates (they get paid
+        // out manually via the payouts flow, not rolled forward).
+        if (priorMonth) {
+          const priorSnap = priorMonth.housemateSnapshots[h.id];
+          if (priorSnap && !priorSnap.transitionOut) {
+            const priorDues = calculateHousemateDues({
+              housemate: h,
+              monthRecord: priorMonth,
+              receipts,
+              sharedCosts,
+              allHousemates: housemates,
+            });
+            if (priorDues.grandTotal < 0) {
+              // Round to cents and store as positive credit.
+              snapshot.creditFromPriorMonth =
+                Math.round(-priorDues.grandTotal * 100) / 100;
+            }
+          }
+        }
+
+        housemateSnapshots[h.id] = snapshot;
       });
 
       const utilities: Record<string, number> = {};
@@ -722,6 +881,22 @@ export function Admin() {
             }`}
           >
             Fund Balances
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("payouts")}
+            className={`px-4 py-2 text-sm font-medium ${
+              activeTab === "payouts"
+                ? "border-b-2 border-sky-400 text-sky-300"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Payouts
+            {pendingPayouts.length > 0 && (
+              <span className="ml-2 inline-block rounded-full bg-amber-900/60 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-200">
+                {pendingPayouts.length} pending
+              </span>
+            )}
           </button>
         </div>
 
@@ -1654,6 +1829,198 @@ export function Admin() {
             </section>
           </>
         )}
+
+        {/* Payouts Tab */}
+        {activeTab === "payouts" && (
+          <section className="space-y-6">
+            <div>
+              <h2 className="mb-1 text-lg font-semibold text-slate-50">
+                Payouts
+              </h2>
+              <p className="text-sm text-slate-400">
+                When a housemate moves out with more receipts than rent owed,
+                the house owes them the difference. Pay them manually (Venmo,
+                cash, etc.) from the house fund, then record it here so the
+                balance is tracked.
+              </p>
+            </div>
+
+            {/* Pending payouts */}
+            <div>
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
+                Pending ({pendingPayouts.length})
+              </h3>
+              {pendingPayouts.length === 0 ? (
+                <div className="rounded-md border border-slate-800 bg-slate-900/50 px-4 py-3 text-sm text-slate-400">
+                  No pending payouts.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingPayouts.map((p) => {
+                    const isOpen =
+                      payoutFormFor?.housemateId === p.housemate.id &&
+                      payoutFormFor?.monthKey === p.monthKey;
+                    return (
+                      <div
+                        key={`${p.housemate.id}-${p.monthKey}`}
+                        className="rounded-md border border-amber-800/60 bg-amber-900/20 p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="font-semibold text-amber-100">
+                              {p.housemate.name}
+                            </div>
+                            <div className="text-xs text-amber-200/80">
+                              Final month: {formatMonthKey(p.monthKey)}
+                            </div>
+                            <div className="mt-1 text-sm text-slate-300">
+                              House owes:{" "}
+                              <span className="font-semibold text-emerald-300">
+                                {formatCurrency(p.amount)}
+                              </span>
+                            </div>
+                          </div>
+                          {!isOpen && (
+                            <button
+                              type="button"
+                              onClick={() => openPayoutForm(p)}
+                              className="rounded-md bg-sky-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-sky-400"
+                            >
+                              Record payout
+                            </button>
+                          )}
+                        </div>
+
+                        {isOpen && (
+                          <div className="mt-4 space-y-3 rounded-md border border-slate-800 bg-slate-900/60 p-3">
+                            {payoutError && (
+                              <div className="rounded-md bg-red-900/30 border border-red-800 px-3 py-2 text-sm text-red-200">
+                                {payoutError}
+                              </div>
+                            )}
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div>
+                                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                                  Date paid
+                                </label>
+                                <input
+                                  type="date"
+                                  value={payoutForm.paidDate}
+                                  onChange={(e) =>
+                                    setPayoutForm((f) => ({
+                                      ...f,
+                                      paidDate: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-400"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                                  Note (optional)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={payoutForm.note}
+                                  onChange={(e) =>
+                                    setPayoutForm((f) => ({
+                                      ...f,
+                                      note: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="e.g. Venmo to Alice"
+                                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-400"
+                                />
+                              </div>
+                            </div>
+                            <div className="text-xs text-slate-400">
+                              This will deduct{" "}
+                              {formatCurrency(p.amount)} from the house fund.
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void handleRecordPayout()}
+                                disabled={recordingPayout}
+                                className="rounded-md bg-sky-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-70"
+                              >
+                                {recordingPayout
+                                  ? "Saving..."
+                                  : "Confirm payout"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPayoutFormFor(null)}
+                                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* History */}
+            <div>
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
+                History
+              </h3>
+              {payouts.length === 0 ? (
+                <div className="rounded-md border border-slate-800 bg-slate-900/50 px-4 py-3 text-sm text-slate-400">
+                  No payouts recorded yet.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-md border border-slate-800">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-slate-900/80 text-xs uppercase tracking-wide text-slate-400">
+                      <tr>
+                        <th className="px-3 py-2">Housemate</th>
+                        <th className="px-3 py-2">Final month</th>
+                        <th className="px-3 py-2">Paid</th>
+                        <th className="px-3 py-2 text-right">Amount</th>
+                        <th className="px-3 py-2">Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payouts.map((p) => {
+                        const housemate = housemates.find(
+                          (h) => h.id === p.housemateId
+                        );
+                        return (
+                          <tr
+                            key={p.id}
+                            className="border-t border-slate-800"
+                          >
+                            <td className="px-3 py-2 font-medium text-slate-200">
+                              {housemate?.name ?? "(unknown)"}
+                            </td>
+                            <td className="px-3 py-2 text-slate-300">
+                              {formatMonthKey(p.monthKey)}
+                            </td>
+                            <td className="px-3 py-2 text-slate-300">
+                              {formatDate(p.paidDate.toDate())}
+                            </td>
+                            <td className="px-3 py-2 text-right font-semibold text-emerald-300">
+                              {formatCurrency(p.amount)}
+                            </td>
+                            <td className="px-3 py-2 text-slate-400">
+                              {p.note ?? "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
       </div>
     </PageShell>
   );
@@ -1766,6 +2133,7 @@ function MonthEditForm({
         feeAdjustment: number;
         transitionOut?: boolean;
         transitionIn?: boolean;
+        creditFromPriorMonth?: number;
       }
     > = {};
     Object.entries(snapshots).forEach(([id, snap]) => {
@@ -1776,6 +2144,7 @@ function MonthEditForm({
         feeAdjustment: number;
         transitionOut?: boolean;
         transitionIn?: boolean;
+        creditFromPriorMonth?: number;
       } = {
         paid: snap.paid,
         feeAdjustment: Number.isFinite(feeAdj) ? feeAdj : 0,
@@ -1785,6 +2154,13 @@ function MonthEditForm({
       }
       if (snap.transitionIn) {
         entry.transitionIn = true;
+      }
+      // Preserve auto-seeded credit from prior month if present on the
+      // original snapshot — it's not yet editable in the UI, but we don't
+      // want to silently drop it on save.
+      const existing = month.housemateSnapshots[id];
+      if (existing?.creditFromPriorMonth) {
+        entry.creditFromPriorMonth = existing.creditFromPriorMonth;
       }
       updatedSnapshots[id] = entry;
     });

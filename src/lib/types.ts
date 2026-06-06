@@ -61,6 +61,16 @@ export interface MonthHousemateSnapshot {
    * residents pay the full utility bill.
    */
   transitionIn?: boolean;
+  /**
+   * Credit (positive number) carried forward from the prior month, applied
+   * when a housemate's prior-month grandTotal went negative because their
+   * receipts exceeded what they owed. Seeded at month creation time and
+   * locked in as part of the snapshot — editing the prior month after this
+   * month exists does NOT retroactively change this value.
+   *
+   * Subtracted from this month's grandTotal in calculateHousemateDues.
+   */
+  creditFromPriorMonth?: number;
 }
 
 export interface MonthRecord {
@@ -82,6 +92,27 @@ export interface Receipt {
   price: number;
   description: string;
   monthKey: string;
+  createdAt: Timestamp;
+}
+
+/**
+ * A payout to a departing housemate whose final-month grandTotal went
+ * negative (they fronted more in receipts than they owed). Recorded by
+ * the financier after sending the money manually from the house fund.
+ */
+export interface Payout {
+  id: string;
+  housemateId: string;
+  /** The month whose negative grandTotal this payout settles. */
+  monthKey: string;
+  /** Positive dollar amount paid out. */
+  amount: number;
+  /** Which fund the money came from. Currently always "house". */
+  fund: "house";
+  /** Date the financier actually sent the money (Timestamp). */
+  paidDate: Timestamp;
+  /** Optional note (e.g. "Venmo, ref #abc"). */
+  note?: string;
   createdAt: Timestamp;
 }
 

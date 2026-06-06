@@ -147,8 +147,14 @@ export function RentMonth() {
     }, {} as Record<string, number>),
     receiptsTotal: summary.reduce((sum, item) => sum + item.dues.receiptsTotal, 0),
     feeAdjustment: summary.reduce((sum, item) => sum + item.dues.feeAdjustment, 0),
+    creditFromPriorMonth: summary.reduce(
+      (sum, item) => sum + item.dues.creditFromPriorMonth,
+      0
+    ),
     grandTotal: summary.reduce((sum, item) => sum + item.dues.grandTotal, 0),
   };
+
+  const anyCredit = totals.creditFromPriorMonth > 0;
 
   // Calculate total utilities
   const totalUtilities = Object.values(monthRecord.utilities).reduce(
@@ -251,6 +257,9 @@ export function RentMonth() {
                 ))}
                 <th className="px-3 py-2 text-right">Receipts</th>
                 <th className="px-3 py-2 text-right">Chores</th>
+                {anyCredit && (
+                  <th className="px-3 py-2 text-right">Credit</th>
+                )}
                 <th className="px-3 py-2 text-right font-semibold">Total</th>
                 <th className="px-3 py-2 text-center">Status</th>
               </tr>
@@ -301,6 +310,13 @@ export function RentMonth() {
                         ? formatCurrency(item.dues.feeAdjustment)
                         : "—"}
                     </td>
+                    {anyCredit && (
+                      <td className="px-3 py-2 text-right text-emerald-300">
+                        {item.dues.creditFromPriorMonth > 0
+                          ? `-${formatCurrency(item.dues.creditFromPriorMonth)}`
+                          : "—"}
+                      </td>
+                    )}
                     <td className="px-3 py-2 text-right font-semibold text-slate-100">
                       {formatCurrency(item.dues.grandTotal)}
                     </td>
@@ -346,6 +362,11 @@ export function RentMonth() {
                     ? formatCurrency(totals.feeAdjustment)
                     : "—"}
                 </td>
+                {anyCredit && (
+                  <td className="px-3 py-2 text-right font-semibold text-emerald-300">
+                    -{formatCurrency(totals.creditFromPriorMonth)}
+                  </td>
+                )}
                 <td className="px-3 py-2 text-right font-bold text-lg text-slate-100">
                   {formatCurrency(totals.grandTotal)}
                 </td>
@@ -430,6 +451,14 @@ export function RentMonth() {
                       <span className="text-slate-400">Chores</span>
                       <span className="text-slate-200">
                         {formatCurrency(item.dues.feeAdjustment)}
+                      </span>
+                    </div>
+                  )}
+                  {item.dues.creditFromPriorMonth > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Credit (prior month)</span>
+                      <span className="text-emerald-300">
+                        -{formatCurrency(item.dues.creditFromPriorMonth)}
                       </span>
                     </div>
                   )}

@@ -14,6 +14,11 @@ export interface HousemateDues {
   sharedCosts: Record<string, number>; // { [sharedCostName]: amount }
   receiptsTotal: number;
   feeAdjustment: number;
+  /**
+   * Credit carried forward from prior month's overhang (positive number).
+   * Subtracted from grandTotal.
+   */
+  creditFromPriorMonth: number;
   grandTotal: number;
 }
 
@@ -187,6 +192,9 @@ export function calculateHousemateDues(
   // Fee Adjustment (from snapshot)
   const feeAdjustment = snapshot?.feeAdjustment ?? 0;
 
+  // Credit carried forward from prior month (positive — subtracted from total)
+  const creditFromPriorMonth = snapshot?.creditFromPriorMonth ?? 0;
+
   // Grand Total
   const grandTotal =
     roomRent +
@@ -195,7 +203,8 @@ export function calculateHousemateDues(
     houseFundDues +
     sharedCostsTotal -
     receiptsTotal +
-    feeAdjustment;
+    feeAdjustment -
+    creditFromPriorMonth;
 
   return {
     roomRent,
@@ -205,6 +214,7 @@ export function calculateHousemateDues(
     sharedCosts: sharedCostsBreakdown,
     receiptsTotal,
     feeAdjustment,
+    creditFromPriorMonth,
     grandTotal,
   };
 }

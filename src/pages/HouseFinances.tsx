@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { PageShell } from "../components/ui/PageShell";
 import { useCollection, useDocument } from "../hooks/useFirestore";
-import type { MonthRecord, Receipt, FundBalances } from "../lib/types";
+import type { MonthRecord, Receipt, FundBalances, Payout } from "../lib/types";
 import {
   formatMonthKey,
   formatCurrency,
@@ -20,6 +20,8 @@ interface FundMonthData {
   house: {
     duesIn: number;
     receiptsOut: number;
+    /** Manual payouts to departed housemates settling negative balances. */
+    payoutsOut: number;
     netChange: number;
   };
   chore: {
@@ -53,6 +55,8 @@ export function HouseFinances() {
     error: fundBalancesError,
   } = useDocument<FundBalances>("fundBalances", "balances");
 
+  const { data: payouts } = useCollection<Payout>("payouts");
+
   // Calculate fund data for each month
   const fundData = useMemo<FundMonthData[]>(() => {
     if (!months || !receipts) return [];
@@ -77,6 +81,17 @@ export function HouseFinances() {
         .filter((r) => r.fund === "house")
         .reduce((sum, r) => sum + r.price, 0);
 
+      // Payouts charged against the house fund — bucketed by the month the
+      // money actually went out (paidDate), not the month whose credit they
+      // settle. That keeps the running balance reflective of real cash flow.
+      const housePayoutsOut = (payouts ?? [])
+        .filter(
+          (p) =>
+            p.fund === "house" &&
+            format(p.paidDate.toDate(), "yyyy-MM") === month.monthKey
+        )
+        .reduce((sum, p) => sum + p.amount, 0);
+
       // Calculate chore fund changes from feeAdjustments
       // Positive feeAdjustment = fee applied (goes into fund)
       // Negative feeAdjustment = credit/discount (comes out of fund)
@@ -100,7 +115,8 @@ export function HouseFinances() {
         house: {
           duesIn: houseDuesIn,
           receiptsOut: houseReceiptsOut,
-          netChange: houseDuesIn - houseReceiptsOut,
+          payoutsOut: housePayoutsOut,
+          netChange: houseDuesIn - houseReceiptsOut - housePayoutsOut,
         },
         chore: {
           feesIn: choreFeesIn,
@@ -109,7 +125,7 @@ export function HouseFinances() {
         },
       };
     });
-  }, [months, receipts]);
+  }, [months, receipts, payouts]);
 
   // Calculate running balances starting from initial balances
   const fundDataWithBalances = useMemo(() => {
@@ -160,6 +176,13 @@ export function HouseFinances() {
       chore: fundBalancesDoc?.initialChoreBalance ?? 0,
     };
   }, [fundBalancesDoc]);
+
+  // Whether any month has a payout outflow — used to conditionally show
+  // the Payouts Out column in the house fund breakdown table.
+  const anyHousePayouts = useMemo(
+    () => fundData.some((d) => d.house.payoutsOut > 0),
+    [fundData]
+  );
 
   // Filter data based on view mode
   const filteredData = useMemo(() => {
@@ -466,6 +489,9 @@ export function HouseFinances() {
                       <th className="px-3 py-2">Month</th>
                       <th className="px-3 py-2 text-right">Dues In</th>
                       <th className="px-3 py-2 text-right">Receipts Out</th>
+                      {anyHousePayouts && (
+                        <th className="px-3 py-2 text-right">Payouts Out</th>
+                      )}
                       <th className="px-3 py-2 text-right">Net Change</th>
                       <th className="px-3 py-2 text-right font-semibold">
                         Running Balance
@@ -487,6 +513,13 @@ export function HouseFinances() {
                         <td className="px-3 py-2 text-right text-red-300">
                           -{formatCurrency(data.house.receiptsOut)}
                         </td>
+                        {anyHousePayouts && (
+                          <td className="px-3 py-2 text-right text-red-300">
+                            {data.house.payoutsOut > 0
+                              ? `-${formatCurrency(data.house.payoutsOut)}`
+                              : "—"}
+                          </td>
+                        )}
                         <td
                           className={`px-3 py-2 text-right font-semibold ${
                             data.house.netChange >= 0
