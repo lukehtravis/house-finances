@@ -1679,7 +1679,12 @@ function MonthEditForm({
   const [snapshots, setSnapshots] = useState<
     Record<
       string,
-      { paid: PaidStatus; feeAdjustment: string; transitionOut: boolean }
+      {
+        paid: PaidStatus;
+        feeAdjustment: string;
+        transitionOut: boolean;
+        transitionIn: boolean;
+      }
     >
   >({});
   const [saving, setSaving] = useState(false);
@@ -1702,13 +1707,19 @@ function MonthEditForm({
 
     const snaps: Record<
       string,
-      { paid: PaidStatus; feeAdjustment: string; transitionOut: boolean }
+      {
+        paid: PaidStatus;
+        feeAdjustment: string;
+        transitionOut: boolean;
+        transitionIn: boolean;
+      }
     > = {};
     Object.entries(month.housemateSnapshots).forEach(([id, snap]) => {
       snaps[id] = {
         paid: snap.paid,
         feeAdjustment: String(snap.feeAdjustment),
         transitionOut: snap.transitionOut === true,
+        transitionIn: snap.transitionIn === true,
       };
     });
     setSnapshots(snaps);
@@ -1750,7 +1761,12 @@ function MonthEditForm({
 
     const updatedSnapshots: Record<
       string,
-      { paid: PaidStatus; feeAdjustment: number; transitionOut?: boolean }
+      {
+        paid: PaidStatus;
+        feeAdjustment: number;
+        transitionOut?: boolean;
+        transitionIn?: boolean;
+      }
     > = {};
     Object.entries(snapshots).forEach(([id, snap]) => {
       const feeAdj = Number(snap.feeAdjustment);
@@ -1759,12 +1775,16 @@ function MonthEditForm({
         paid: PaidStatus;
         feeAdjustment: number;
         transitionOut?: boolean;
+        transitionIn?: boolean;
       } = {
         paid: snap.paid,
         feeAdjustment: Number.isFinite(feeAdj) ? feeAdj : 0,
       };
       if (snap.transitionOut) {
         entry.transitionOut = true;
+      }
+      if (snap.transitionIn) {
+        entry.transitionIn = true;
       }
       updatedSnapshots[id] = entry;
     });
@@ -1886,10 +1906,11 @@ function MonthEditForm({
                   <th className="px-3 py-2">Chores ($)</th>
                   <th
                     className="px-3 py-2"
-                    title="When checked, this housemate is billed only for utilities, receipts, and chores this month — no room rent, dues, or shared costs"
+                    title="Moving in: skips utilities (prior month's bills they weren't here for). Moving out: bills only utilities/receipts/chores — no room rent, dues, or shared costs."
                   >
-                    Transition out
+                    Transition
                   </th>
+                  <th className="px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -1898,10 +1919,20 @@ function MonthEditForm({
                     (h) => h.id === housemateId
                   );
                   if (!housemate) return null;
+                  const transitionValue = snap.transitionIn
+                    ? "in"
+                    : snap.transitionOut
+                      ? "out"
+                      : "none";
                   return (
                     <tr key={housemateId} className="border-t border-slate-800">
                       <td className="px-3 py-2 text-slate-300">
                         {housemate.name}
+                        {snap.transitionIn && (
+                          <span className="ml-2 rounded-full bg-emerald-900/60 px-2 py-0.5 text-[10px] font-medium uppercase text-emerald-200">
+                            Moving in
+                          </span>
+                        )}
                         {snap.transitionOut && (
                           <span className="ml-2 rounded-full bg-amber-900/60 px-2 py-0.5 text-[10px] font-medium uppercase text-amber-200">
                             Moving out
@@ -1946,23 +1977,40 @@ function MonthEditForm({
                         />
                       </td>
                       <td className="px-3 py-2">
-                        <label className="inline-flex items-center gap-2 text-xs text-slate-300">
-                          <input
-                            type="checkbox"
-                            checked={snap.transitionOut}
-                            onChange={(e) =>
-                              setSnapshots((s) => ({
-                                ...s,
-                                [housemateId]: {
-                                  ...s[housemateId]!,
-                                  transitionOut: e.target.checked,
-                                },
-                              }))
-                            }
-                            className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-amber-400"
-                          />
-                          Moving out
-                        </label>
+                        <select
+                          value={transitionValue}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setSnapshots((s) => ({
+                              ...s,
+                              [housemateId]: {
+                                ...s[housemateId]!,
+                                transitionIn: v === "in",
+                                transitionOut: v === "out",
+                              },
+                            }));
+                          }}
+                          className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none ring-0 focus:border-sky-400"
+                        >
+                          <option value="none">—</option>
+                          <option value="in">Moving in</option>
+                          <option value="out">Moving out</option>
+                        </select>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSnapshots((s) => {
+                              const { [housemateId]: _omit, ...rest } = s;
+                              return rest;
+                            })
+                          }
+                          className="text-xs font-medium text-red-300 hover:text-red-200"
+                          title="Remove from this month's snapshot"
+                        >
+                          Remove
+                        </button>
                       </td>
                     </tr>
                   );
@@ -1970,6 +2018,21 @@ function MonthEditForm({
               </tbody>
             </table>
           </div>
+          <AddHousemateToSnapshot
+            housemates={housemates}
+            snapshotIds={Object.keys(snapshots)}
+            onAdd={(id, asTransitionIn) =>
+              setSnapshots((s) => ({
+                ...s,
+                [id]: {
+                  paid: "unpaid",
+                  feeAdjustment: "0",
+                  transitionOut: false,
+                  transitionIn: asTransitionIn,
+                },
+              }))
+            }
+          />
         </div>
 
         {/* Calculation Validation */}
@@ -2066,5 +2129,71 @@ function MonthEditForm({
         </div>
       </div>
     </section>
+  );
+}
+
+// Small inline component for adding a missing housemate to a month's snapshot
+function AddHousemateToSnapshot({
+  housemates,
+  snapshotIds,
+  onAdd,
+}: {
+  housemates: Housemate[];
+  snapshotIds: string[];
+  onAdd: (housemateId: string, asTransitionIn: boolean) => void;
+}) {
+  const [selectedId, setSelectedId] = useState("");
+  const [asTransitionIn, setAsTransitionIn] = useState(true);
+
+  // Anyone not already in the snapshot is a candidate. Include archived
+  // housemates too (financier might need to add them back retroactively).
+  const candidates = useMemo(
+    () => housemates.filter((h) => !snapshotIds.includes(h.id)),
+    [housemates, snapshotIds]
+  );
+
+  if (candidates.length === 0) return null;
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-dashed border-slate-700 bg-slate-900/30 px-3 py-2">
+      <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
+        Add housemate to this month
+      </span>
+      <select
+        value={selectedId}
+        onChange={(e) => setSelectedId(e.target.value)}
+        className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none ring-0 focus:border-sky-400"
+      >
+        <option value="">Select…</option>
+        {candidates.map((h) => (
+          <option key={h.id} value={h.id}>
+            {h.name}
+            {h.archived ? " (archived)" : ""}
+          </option>
+        ))}
+      </select>
+      <label className="inline-flex items-center gap-2 text-xs text-slate-200">
+        <input
+          type="checkbox"
+          checked={asTransitionIn}
+          onChange={(e) => setAsTransitionIn(e.target.checked)}
+          className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-emerald-400"
+        />
+        Mark as moving in (skip utilities)
+      </label>
+      <button
+        type="button"
+        onClick={() => {
+          if (!selectedId) return;
+          onAdd(selectedId, asTransitionIn);
+          setSelectedId("");
+          setAsTransitionIn(true);
+        }}
+        disabled={!selectedId}
+        className="rounded-md bg-sky-500 px-3 py-1 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Add
+      </button>
+    </div>
   );
 }

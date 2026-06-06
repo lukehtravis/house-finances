@@ -53,6 +53,14 @@ export interface MonthHousemateSnapshot {
    * Other (remaining) housemates absorb the gap on shared costs.
    */
   transitionOut?: boolean;
+  /**
+   * True when this is the housemate's transition-in month (they just
+   * moved in). They skip utilities for this month (those are last
+   * month's bills they weren't here for). The utilities divisor for
+   * other housemates excludes transition-in people too — so the prior
+   * residents pay the full utility bill.
+   */
+  transitionIn?: boolean;
 }
 
 export interface MonthRecord {

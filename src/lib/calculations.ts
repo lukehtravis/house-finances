@@ -22,6 +22,7 @@ export interface MonthSummaryItem {
   dues: HousemateDues;
   paid: "unpaid" | "partial" | "paid";
   transitionOut: boolean;
+  transitionIn: boolean;
 }
 
 export interface CalculateHousemateDuesParams {
@@ -69,6 +70,16 @@ function isTransitionOut(
 }
 
 /**
+ * Returns true if a snapshot represents a transitioning-in housemate
+ * (just moved in — skips utilities for this billing cycle).
+ */
+function isTransitionIn(
+  snapshot: MonthHousemateSnapshot | undefined
+): boolean {
+  return snapshot?.transitionIn === true;
+}
+
+/**
  * Calculate all dues for a single housemate in a given month.
  */
 export function calculateHousemateDues(
@@ -81,9 +92,10 @@ export function calculateHousemateDues(
     monthRecord.housemateSnapshots
   ).length;
 
-  // Get snapshot for this housemate (for fee adjustment + transition flag)
+  // Get snapshot for this housemate (for fee adjustment + transition flags)
   const snapshot = monthRecord.housemateSnapshots[housemate.id];
   const transitionOut = isTransitionOut(snapshot);
+  const transitionIn = isTransitionIn(snapshot);
 
   // Count of housemates who will pay forward-looking charges (room rent,
   // dues, shared costs). Excludes anyone transitioning out, since the
@@ -92,18 +104,27 @@ export function calculateHousemateDues(
     monthRecord.housemateSnapshots
   ).filter((s) => !isTransitionOut(s)).length;
 
+  // Count of housemates who pay backward-looking charges (utilities).
+  // Excludes anyone transitioning in, since they weren't here for the
+  // prior month's bills.
+  const backwardLookingCount = Object.values(
+    monthRecord.housemateSnapshots
+  ).filter((s) => !isTransitionIn(s)).length;
+
   // Room Rent: zeroed for transition-out housemates
   const roomRent = transitionOut ? 0 : housemate.roomRent;
 
-  // Utilities: sum of all utilities divided by full snapshot count
-  // (transition-out housemates still owe utilities — these are the prior
-  // month's bills that they were there for)
+  // Utilities: sum of all utilities divided by backward-looking count
+  // (transition-in housemates pay 0; remaining housemates cover the bill)
   const totalUtilities = Object.values(monthRecord.utilities).reduce(
     (sum, val) => sum + val,
     0
   );
-  const utilities =
-    snapshotHousemateCount > 0 ? totalUtilities / snapshotHousemateCount : 0;
+  const utilities = transitionIn
+    ? 0
+    : backwardLookingCount > 0
+      ? totalUtilities / backwardLookingCount
+      : 0;
 
   // Dues (forward-looking — zeroed for transition-out)
   const groceryDues = transitionOut ? 0 : monthRecord.groceryDues;
@@ -217,6 +238,7 @@ export function calculateMonthSummary(
         dues,
         paid: snapshot.paid,
         transitionOut: snapshot.transitionOut === true,
+        transitionIn: snapshot.transitionIn === true,
       });
     }
   );
