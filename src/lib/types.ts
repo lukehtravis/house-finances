@@ -71,6 +71,12 @@ export interface MonthHousemateSnapshot {
    * Subtracted from this month's grandTotal in calculateHousemateDues.
    */
   creditFromPriorMonth?: number;
+  /**
+   * The dollar amount the housemate has actually paid so far, recorded when
+   * `paid === "partial"`. Purely informational — it does not affect the dues
+   * calculation. Only meaningful for partial payments; ignored otherwise.
+   */
+  partialPaidAmount?: number;
 }
 
 export interface MonthRecord {

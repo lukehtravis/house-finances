@@ -2049,6 +2049,7 @@ function MonthEditForm({
       {
         paid: PaidStatus;
         feeAdjustment: string;
+        partialPaidAmount: string;
         transitionOut: boolean;
         transitionIn: boolean;
       }
@@ -2077,6 +2078,7 @@ function MonthEditForm({
       {
         paid: PaidStatus;
         feeAdjustment: string;
+        partialPaidAmount: string;
         transitionOut: boolean;
         transitionIn: boolean;
       }
@@ -2085,6 +2087,8 @@ function MonthEditForm({
       snaps[id] = {
         paid: snap.paid,
         feeAdjustment: String(snap.feeAdjustment),
+        partialPaidAmount:
+          snap.partialPaidAmount != null ? String(snap.partialPaidAmount) : "",
         transitionOut: snap.transitionOut === true,
         transitionIn: snap.transitionIn === true,
       };
@@ -2131,6 +2135,7 @@ function MonthEditForm({
       {
         paid: PaidStatus;
         feeAdjustment: number;
+        partialPaidAmount?: number;
         transitionOut?: boolean;
         transitionIn?: boolean;
         creditFromPriorMonth?: number;
@@ -2142,6 +2147,7 @@ function MonthEditForm({
       const entry: {
         paid: PaidStatus;
         feeAdjustment: number;
+        partialPaidAmount?: number;
         transitionOut?: boolean;
         transitionIn?: boolean;
         creditFromPriorMonth?: number;
@@ -2149,6 +2155,14 @@ function MonthEditForm({
         paid: snap.paid,
         feeAdjustment: Number.isFinite(feeAdj) ? feeAdj : 0,
       };
+      // Only persist the partial payment amount for partial payments, and only
+      // when a valid number was entered. Avoids writing undefined to Firestore.
+      if (snap.paid === "partial" && snap.partialPaidAmount.trim() !== "") {
+        const partialNum = Number(snap.partialPaidAmount);
+        if (Number.isFinite(partialNum) && partialNum >= 0) {
+          entry.partialPaidAmount = partialNum;
+        }
+      }
       if (snap.transitionOut) {
         entry.transitionOut = true;
       }
@@ -2279,6 +2293,12 @@ function MonthEditForm({
                 <tr>
                   <th className="px-3 py-2">Name</th>
                   <th className="px-3 py-2">Paid Status</th>
+                  <th
+                    className="px-3 py-2"
+                    title="Dollar amount paid so far. Only editable when Paid Status is Partial."
+                  >
+                    Partial Paid ($)
+                  </th>
                   <th className="px-3 py-2">Chores ($)</th>
                   <th
                     className="px-3 py-2"
@@ -2333,6 +2353,29 @@ function MonthEditForm({
                           <option value="partial">Partial</option>
                           <option value="paid">Paid</option>
                         </select>
+                      </td>
+                      <td className="px-3 py-2">
+                        {snap.paid === "partial" ? (
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={snap.partialPaidAmount}
+                            onChange={(e) =>
+                              setSnapshots((s) => ({
+                                ...s,
+                                [housemateId]: {
+                                  ...s[housemateId]!,
+                                  partialPaidAmount: e.target.value,
+                                },
+                              }))
+                            }
+                            className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none ring-0 focus:border-sky-400"
+                            placeholder="0.00"
+                          />
+                        ) : (
+                          <span className="text-xs text-slate-600">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         <input
@@ -2403,6 +2446,7 @@ function MonthEditForm({
                 [id]: {
                   paid: "unpaid",
                   feeAdjustment: "0",
+                  partialPaidAmount: "",
                   transitionOut: false,
                   transitionIn: asTransitionIn,
                 },

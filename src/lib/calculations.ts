@@ -28,6 +28,8 @@ export interface MonthSummaryItem {
   paid: "unpaid" | "partial" | "paid";
   transitionOut: boolean;
   transitionIn: boolean;
+  /** Amount paid so far when `paid === "partial"` (informational only). */
+  partialPaidAmount?: number;
 }
 
 export interface CalculateHousemateDuesParams {
@@ -249,6 +251,7 @@ export function calculateMonthSummary(
         paid: snapshot.paid,
         transitionOut: snapshot.transitionOut === true,
         transitionIn: snapshot.transitionIn === true,
+        partialPaidAmount: snapshot.partialPaidAmount,
       });
     }
   );

@@ -156,6 +156,10 @@ export function RentMonth() {
 
   const anyCredit = totals.creditFromPriorMonth > 0;
 
+  // Show the "Partial Paid" column only when at least one housemate has a
+  // partial payment status.
+  const anyPartial = summary.some((item) => item.paid === "partial");
+
   // Calculate total utilities
   const totalUtilities = Object.values(monthRecord.utilities).reduce(
     (sum, val) => sum + val,
@@ -262,6 +266,9 @@ export function RentMonth() {
                 )}
                 <th className="px-3 py-2 text-right font-semibold">Total</th>
                 <th className="px-3 py-2 text-center">Status</th>
+                {anyPartial && (
+                  <th className="px-3 py-2 text-right">Partial Paid</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -327,6 +334,14 @@ export function RentMonth() {
                         {status.text}
                       </span>
                     </td>
+                    {anyPartial && (
+                      <td className="px-3 py-2 text-right text-amber-300">
+                        {item.paid === "partial" &&
+                        item.partialPaidAmount != null
+                          ? formatCurrency(item.partialPaidAmount)
+                          : "—"}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -371,6 +386,20 @@ export function RentMonth() {
                   {formatCurrency(totals.grandTotal)}
                 </td>
                 <td className="px-3 py-2"></td>
+                {anyPartial && (
+                  <td className="px-3 py-2 text-right font-semibold text-amber-300">
+                    {formatCurrency(
+                      summary.reduce(
+                        (sum, item) =>
+                          sum +
+                          (item.paid === "partial" && item.partialPaidAmount != null
+                            ? item.partialPaidAmount
+                            : 0),
+                        0
+                      )
+                    )}
+                  </td>
+                )}
               </tr>
             </tfoot>
           </table>
@@ -468,6 +497,15 @@ export function RentMonth() {
                       {formatCurrency(item.dues.grandTotal)}
                     </span>
                   </div>
+                  {item.paid === "partial" &&
+                    item.partialPaidAmount != null && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Partial Paid</span>
+                        <span className="text-amber-300">
+                          {formatCurrency(item.partialPaidAmount)}
+                        </span>
+                      </div>
+                    )}
                 </div>
               </div>
             );
